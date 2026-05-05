@@ -1,0 +1,69 @@
+global:
+  rbac:
+    create: true
+    
+crds:
+  enabled: true
+  keep: true
+
+replicaCount: 2
+
+imagePullSecrets: []
+
+image:
+  repository: docker-registry-nexus.neuro.tech/trust-manager/trust-manager
+  tag: v0.21.1
+
+defaultPackage:
+  enabled: true
+  
+defaultPackageImage:
+  repository: docker-registry-nexus.neuro.tech/trust-manager/trust-pkg-debian-bookworm
+  tag: 20230311-deb12u1.4
+
+serviceAccount:
+  create: true
+
+secretTargets:
+  enabled: false
+
+app:
+  logFormat: json
+  logLevel: 2
+  leaderElection:
+    enabled: true
+  trust:
+    namespace: cert-manager
+    
+  webhook:
+    tls:
+      helmCert:
+        enabled: false
+      approverPolicy:
+        enabled: false
+        certManagerNamespace: "cert-manager"
+        certManagerServiceAccount: "cert-manager"
+    hostNetwork: false
+    
+  metrics:
+    service:
+      enabled: true
+      servicemonitor:
+        enabled: false
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/name
+            operator: In
+            values:
+            - trust-manager
+        topologyKey: kubernetes.io/hostname

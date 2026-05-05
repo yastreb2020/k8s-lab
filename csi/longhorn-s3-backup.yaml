@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-backup-s3-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: longhorn-static
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-backup-s3-pod
+spec:
+  containers:
+    - name: writer
+      image: alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - while true; do
+          echo "$(date) - Hello from K8s - S3!" >> /mnt/storage/test-file.txt;
+          sleep 5;
+          done
+      volumeMounts:
+        - name: storage
+          mountPath: /mnt/storage
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: test-backup-s3-pvc

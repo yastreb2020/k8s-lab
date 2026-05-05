@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: restore-nfs
+spec:
+  capacity:
+    storage: 1Gi # Должно быть столько же, сколько в оригинальном томе
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-static
+  csi:
+    driver: driver.longhorn.io
+    volumeHandle: restore-backup-nfs
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-restore-nfs
+spec:
+  storageClassName: longhorn-static
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi # Размер должен быть не больше, чем был у оригинального тома
+  volumeName: restore-nfs
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-restore-check-nfs
+spec:
+  containers:
+    - name: checker
+      image: alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - echo "Checking recovered data..."; 
+          cat /data/test-file.txt; 
+          sleep 3600
+      volumeMounts:
+        - name: restored-storage
+          mountPath: /data
+  volumes:
+    - name: restored-storage
+      persistentVolumeClaim:
+        claimName: pvc-restore-nfs

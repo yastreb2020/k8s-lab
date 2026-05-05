@@ -1,0 +1,28 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-ca-bundle
+spec:
+  rules:
+  - name: inject-ca-volume
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaceSelector:
+            matchLabels:
+              inject-ca: "true"
+    mutate:
+      patchStrategicMerge:
+        spec:
+          volumes:
+          - name: ca-bundle
+            configMap:
+              name: cluster-ca-bundle
+          containers:
+          - (name): "*"
+            volumeMounts:
+            - name: ca-bundle
+              mountPath: /etc/ssl/certs/ca-certificates.crt
+              subPath: ca-certificates.crt

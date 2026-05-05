@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-test-pvc
+spec:
+  accessModes:
+    - ReadWriteMany  # NFS поддерживает одновременный доступ из многих подов
+  storageClassName: nfs-client
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nfs-test-pod
+spec:
+  containers:
+    - name: writer
+      image: alpine
+      command: ["/bin/sh", "-c"]
+      args:
+        - while true; do
+          echo "$(date) - Hello from K8s NFS!" >> /mnt/nfs/test-file.txt;
+          sleep 5;
+          done
+      volumeMounts:
+        - name: nfs-storage
+          mountPath: /mnt/nfs
+  volumes:
+    - name: nfs-storage
+      persistentVolumeClaim:
+        claimName: nfs-test-pvc

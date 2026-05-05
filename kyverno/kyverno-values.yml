@@ -1,0 +1,117 @@
+global:
+
+  image:
+    registry: docker-registry-nexus.neuro.tech
+  imagePullSecrets: []
+
+
+crds:
+  install: true
+  migration:
+    enabled: true # для обновлений
+    image:
+      registry: ~
+      repository: kyverno/kyverno-cli
+      tag: ~
+    imagePullSecrets: []
+
+
+# Configuration
+config:
+  create: true
+  preserve: true
+
+
+# Tests configuration
+test:
+  sleep: 20
+  image:
+    registry: docker-registry-nexus.neuro.tech
+    repository: kyverno/readiness-checker
+    tag: 'v0.1.0'
+
+
+webhooksCleanup:
+  enabled: true
+  image:
+    registry: docker-registry-nexus.neuro.tech
+    repository: kyverno/kubectl
+    tag: 'v1.34.3' # версия кластера k8s!
+
+
+features:
+  backgroundScan:
+    enabled: true
+    backgroundScanWorkers: 2   # Можно увеличить для больших кластеров
+    backgroundScanInterval: 1h   # Можно ставить реже для снижения нагрузки
+  configMapCaching:
+    enabled: true
+  logging:
+    format: json # JSON формат для лучшей интеграции с vector/opensearch
+    verbosity: 2
+  registryClient:
+    allowInsecure: false # Использование HTTP
+    credentialHelpers: []  # Отключаем ненужные хелперы
+  ttlController:
+    reconciliationInterval: 1m # Частота очистки старых ресурсов
+
+
+admissionController:
+  rbac:
+    create: true
+  replicas: ~ # Для HA минимум 3 реплики
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 2  # Должно быть доступно минимум 2 пода
+  initContainer:
+    image:
+      registry: ~
+      repository: kyverno/kyvernopre
+      tag: ~
+  container:
+    image:
+      registry: ~
+      repository: kyverno/kyverno
+      tag: ~
+
+
+backgroundController:
+  enabled: true
+  rbac:
+    create: true
+  image:
+    registry: ~
+    repository: kyverno/background-controller
+    tag: ~
+  replicas: ~ # 2
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 1
+
+
+cleanupController:
+  enabled: true
+  rbac:
+    create: true
+  image:
+    registry: ~
+    repository: kyverno/cleanup-controller
+    tag: ~
+  replicas: ~ # 2 - Для важных фоновых задач
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 1
+
+
+reportsController:
+  enabled: true
+  rbac:
+    create: true
+  image:
+    registry: ~
+    repository: kyverno/reports-controller
+    tag: ~
+  replicas: ~ # 2
+  # podDisruptionBudget:
+  #   enabled: true
+  #   minAvailable: 1

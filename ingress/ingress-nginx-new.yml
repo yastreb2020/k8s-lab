@@ -1,0 +1,70 @@
+global:
+  image:
+    registry: registry.k8s.io
+
+controller:
+  image:
+    registry: registry.k8s.io
+    image: ingress-nginx/controller
+    tag: "v1.14.3"
+
+  config: {}
+  addHeaders: {}
+
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: true
+    controllerValue: k8s.io/ingress-Nginx
+
+  kind: Deployment
+  replicaCount: 2
+  minAvailable: 1
+
+  service:
+    enabled: true
+    type: LoadBalancer
+    
+    # annotations:
+    #   metallb.universe.tf/loadBalancerIPs: 172.24.30.80
+    # -- Deprecated: Pre-defined IP address of the external controller service. Used by cloud providers to connect the resulting load balancer service to a pre-existing static IP.
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#loadbalancer
+    # loadBalancerIP: "172.24.30.80"
+    # -- Restrict access to the external controller service. Values must be CIDRs. Allows any source address by default.
+    # loadBalancerSourceRanges: []
+    # -- Load balancer class of the external controller service. Used by cloud providers to select a load balancer implementation other than the cloud provider default.
+    # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#load-balancer-class
+    # loadBalancerClass: ""
+    
+    externalTrafficPolicy: "Local"
+
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+      image:
+        registry: registry.k8s.io
+        image: ingress-nginx/kube-webhook-certgen
+        tag: v1.6.7
+    # Use certmanager to generate webhook certs
+    certManager:
+      enabled: false
+  metrics:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+
+
+defaultBackend:
+  enabled: false
+  name: defaultbackend
+  image:
+    registry: registry.k8s.io
+    image: defaultbackend-amd64
+    tag: "1.5"
+  replicaCount: 1
+
+imagePullSecrets: []

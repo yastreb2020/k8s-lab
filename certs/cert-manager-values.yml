@@ -1,0 +1,116 @@
+global:
+  leaderElection:
+    enabled: true
+    namespace: cert-manager
+  imagePullSecrets: []
+
+crds:
+  enabled: true
+  keep: true
+
+replicaCount: 2
+
+image:
+  repository: docker-registry-nexus.neuro.tech/cert-manager/cert-manager-controller
+  tag : v1.19.4
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app.kubernetes.io/instance
+            operator: In
+            values:
+            - cert-manager
+        topologyKey: kubernetes.io/hostname
+
+
+# if needed
+prometheus:
+  enabled: true
+
+  servicemonitor:
+    enabled: false
+
+  podmonitor:
+    enabled: false
+
+
+webhook:
+  replicaCount: 3
+  image:
+    repository: docker-registry-nexus.neuro.tech/cert-manager/cert-manager-webhook
+    tag: v1.19.4
+
+  securePort: 10250
+  hostNetwork: false
+  serviceType: ClusterIP
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/instance
+              operator: In
+              values:
+              - cert-manager
+            - key: app.kubernetes.io/component
+              operator: In
+              values:
+              - webhook
+          topologyKey: kubernetes.io/hostname
+
+
+cainjector:
+  enabled: true
+  replicaCount: 2
+
+  image:
+    repository: docker-registry-nexus.neuro.tech/cert-manager/cert-manager-cainjector
+    tag: v1.19.4
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/instance
+              operator: In
+              values:
+              - cert-manager
+            - key: app.kubernetes.io/component
+              operator: In
+              values:
+              - cainjector
+          topologyKey: kubernetes.io/hostname
+
+acmesolver:
+  image:
+    repository: docker-registry-nexus.neuro.tech/cert-manager/cert-manager-acmesolver
+    tag: v1.19.4
+
+startupapicheck:
+  enabled: true
+  image:
+    repository: docker-registry-nexus.neuro.tech/cert-manager/cert-manager-startupapicheck
+    tag: v1.19.4
