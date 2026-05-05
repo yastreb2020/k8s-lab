@@ -1,0 +1,41 @@
+imagePullSecrets: []
+rbac:
+  create: true
+
+prometheus:
+  rbacProxy:
+    repository: gcr.io/kubebuilder/kube-rbac-proxy
+#docker-registry-nexus.neuro.tech/kubebuilder/kube-rbac-proxy
+    tag: v0.12.0
+    pullPolicy:
+
+controller:
+  enabled: true
+  logLevel: info
+  webhookMode: enabled
+  image:
+    repository: quay.io/metallb/controller
+#docker-registry-nexus.neuro.tech/metallb/controller
+    tag: v0.15.3
+    pullPolicy:
+
+speaker:
+  enabled: true
+  logLevel: info
+
+  image:
+    repository: quay.io/metallb/speaker
+#docker-registry-nexus.neuro.tech/metallb/speaker
+    tag: v0.15.3
+    pullPolicy:
+  frr:
+    enabled: false
+      #    image:
+      #      repository: docker-registry-nexus.neuro.tech/frrouting/frr
+      #      tag: 10.4.1
+      #      pullPolicy:
+    metricsPort: 7473
+    resources: {}
+
+crds:
+  enabled: true
