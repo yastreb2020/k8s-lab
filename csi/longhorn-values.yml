@@ -1,93 +1,72 @@
+# kubernetes.lab v2: Longhorn v1.11.0 — values, адаптированные под фактическую установку стенда
+# (2026-09-03; установка уже выполнена и проверена — этот файл документирует её конфигурацию)
+# Отличия от старого стенда: defaultDataPath /app/disk1 (не /mnt/longhorn), defaultReplicaCount 2 (не 1).
+# Диски: w0:/app/disk1 (default-disk-fc0100000000), w0:/app/disk2 (default-disk-2, добавлен отдельно),
+#        w1:/app/disk1. Все storageReserved=0 (монтирования выделены под Longhorn полностью).
+# Backup target (S3): настраивается НЕ через helm, а через CR:
+#   kubectl -n longhorn-system patch backuptargets.longhorn.io default --type=merge \
+#     -p='{"spec":{"backupTargetURL":"s3://k8s-lab@us-east-1/","credentialSecret":"minio-backup-creds"}}'
+#   Секрет minio-backup-creds (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY/AWS_ENDPOINTS) — из .env, не коммитится.
+#   Внимание: AWS_ENDPOINTS — строка URL (http://vm-minio.service.demo:9000), НЕ JSON; порт 9000 (9001 = консоль).
+# Бэкап-политика: RecurringJob backup-once (task=backup, cron "0 2 * * *", retain 7).
 global:
   imageRegistry: "docker.io"
   imagePullSecrets: []
   timezone: ""
 networkPolicies:
   enabled: false
-  type: "k3s"
 image:
   longhorn:
     engine:
-      registry: ""
       repository: longhornio/longhorn-engine
       tag: v1.11.0
     manager:
-      registry: ""
       repository: longhornio/longhorn-manager
       tag: v1.11.0
     ui:
-      registry: ""
       repository: longhornio/longhorn-ui
       tag: v1.11.0
     instanceManager:
-      registry: ""
       repository: longhornio/longhorn-instance-manager
       tag: v1.11.0
     shareManager:
-      registry: ""
       repository: longhornio/longhorn-share-manager
       tag: v1.11.0
     backingImageManager:
-      registry: ""
       repository: longhornio/backing-image-manager
       tag: v1.11.0
     supportBundleKit:
-      registry: ""
       repository: longhornio/support-bundle-kit
       tag: v0.0.79
   csi:
     attacher:
-      registry: ""
       repository: longhornio/csi-attacher
       tag: v4.10.0-20251226
     provisioner:
-      registry: ""
       repository: longhornio/csi-provisioner
       tag: v5.3.0-20251226
     nodeDriverRegistrar:
-      registry: ""
       repository: longhornio/csi-node-driver-registrar
       tag: v2.15.0-20251226
     resizer:
-      registry: ""
       repository: longhornio/csi-resizer
       tag: v2.0.0-20251226
     snapshotter:
-      registry: ""
       repository: longhornio/csi-snapshotter
       tag: v8.4.0-20251226
     livenessProbe:
-      registry: ""
       repository: longhornio/livenessprobe
       tag: v2.17.0-20251226
 defaultSettings:
-  defaultDataLocality: "best-effort"
-  defaultReplicaCount: 1
-  defaultDataPath: /mnt/longhorn
-privateRegistry:
-  createSecret: ~
-  registryUrl: ~
-  registryUser: ~
-  registryPasswd: ~
-  registrySecret: ~
+  defaultDataLocality: "disabled"
+  defaultReplicaCount: 2
+  defaultDataPath: /app/disk1
 longhornUI:
   replicas: 1
-  # affinity:
-  #   podAntiAffinity:
-  #     preferredDuringSchedulingIgnoredDuringExecution:
-  #       - weight: 1
-  #         podAffinityTerm:
-  #           labelSelector:
-  #             matchExpressions:
-  #               - key: app
-  #                 operator: In
-  #                 values:
-  #                   - longhorn-ui
-  #           topologyKey: kubernetes.io/hostname
 ingress:
   enabled: true
   ingressClassName: "nginx"
-  host: longhorn.k8s-test.neuro.tech
+  host: longhorn.kubernetes.lab
   tls: true
   secureBackends: false
   tlsSecret: longhorn-tls
@@ -95,13 +74,11 @@ ingress:
   pathType: ImplementationSpecific
   annotations:
     cert-manager.io/cluster-issuer: intermediate-ca-issuer
-    # NGINX Ingress annotations
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "10000m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    # Important for Longhorn UI functionality
     nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
 metrics:
   serviceMonitor:

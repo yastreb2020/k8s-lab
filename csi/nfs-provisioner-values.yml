@@ -1,0 +1,13 @@
+# kubernetes.lab v2: nfs-subdir-external-provisioner (SC nfs-client)
+# Applied 2026-09-03: helm upgrade --install nfs-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner
+#   -n nfs-subdir-external-provisioner --create-namespace -f nfs-provisioner-values.yml
+# NFS server: cp0.kubernetes.lab (172.24.254.214), /srv/nfs (export 172.24.254.0/24)
+image:
+  repository: registry.k8s.io/sig-storage/nfs-subdir-external-provisioner
+  tag: v4.0.2
+nfs:
+  server: 172.24.254.214
+  path: /srv/nfs
+storageClass:
+  name: nfs-client
+  defaultClass: false
