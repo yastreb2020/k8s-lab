@@ -11,14 +11,14 @@ replicaCount: 2
 imagePullSecrets: []
 
 image:
-  repository: docker-registry-nexus.neuro.tech/trust-manager/trust-manager
+  repository: quay.io/jetstack/trust-manager/trust-manager
   tag: v0.21.1
 
 defaultPackage:
   enabled: true
   
 defaultPackageImage:
-  repository: docker-registry-nexus.neuro.tech/trust-manager/trust-pkg-debian-bookworm
+  repository: quay.io/jetstack/trust-pkg-debian-bookworm
   tag: 20230311-deb12u1.4
 
 serviceAccount:
