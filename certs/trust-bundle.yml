@@ -1,0 +1,17 @@
+# Фаза 3 PKI: trust-manager Bundle — распространение корневого Neurotech CA
+# в ConfigMap ca-bundle.pem во всех namespace'ах (namespaceSelector {} = все).
+apiVersion: trust.cert-manager.io/v1alpha1
+kind: Bundle
+metadata:
+  name: cluster-ca-bundle
+  namespace: cert-manager
+spec:
+  sources:
+  - secret:
+      name: neurotech-root-ca
+      key: ca.crt
+  target:
+    configMap:
+      key: ca-bundle.pem
+    namespaceSelector:
+      matchLabels: {}
