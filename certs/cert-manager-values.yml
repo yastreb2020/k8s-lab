@@ -11,7 +11,7 @@ crds:
 replicaCount: 2
 
 image:
-  repository: quay.io/jetstack/cert-manager/cert-manager-controller
+  repository: quay.io/jetstack/cert-manager-controller
   tag : v1.19.4
 
 podDisruptionBudget:
@@ -46,7 +46,7 @@ prometheus:
 webhook:
   replicaCount: 3
   image:
-    repository: quay.io/jetstack/cert-manager/cert-manager-webhook
+    repository: quay.io/jetstack/cert-manager-webhook
     tag: v1.19.4
 
   securePort: 10250
@@ -80,7 +80,7 @@ cainjector:
   replicaCount: 2
 
   image:
-    repository: quay.io/jetstack/cert-manager/cert-manager-cainjector
+    repository: quay.io/jetstack/cert-manager-cainjector
     tag: v1.19.4
 
   podDisruptionBudget:
@@ -106,11 +106,11 @@ cainjector:
 
 acmesolver:
   image:
-    repository: quay.io/jetstack/cert-manager/cert-manager-acmesolver
+    repository: quay.io/jetstack/cert-manager-acmesolver
     tag: v1.19.4
 
 startupapicheck:
   enabled: true
   image:
-    repository: quay.io/jetstack/cert-manager/cert-manager-startupapicheck
+    repository: quay.io/jetstack/cert-manager-startupapicheck
     tag: v1.19.4
