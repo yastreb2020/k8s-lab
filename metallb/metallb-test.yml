@@ -1,12 +1,14 @@
+# Test for MetalLB (kubernetes.lab v2): deploy + LoadBalancer service
+# Verified 2026-09-03: EXTERNAL-IP 172.24.254.221 allocated from lab-pool, HTTP 200 from WSL/w0/cp0.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: metallb-test-app
+  name: metallb-test
   namespace: metallb-system
   labels:
     app: metallb-test
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: metallb-test
@@ -16,30 +18,20 @@ spec:
         app: metallb-test
     spec:
       containers:
-        - name: nginx
-          image: nginx:stable-alpine
-          ports:
-            - containerPort: 80
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 5
+      - name: web
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: metallb-test-svc
   namespace: metallb-system
-  annotations:
-    metallb.universe.tf/address-pool: test-pool
 spec:
+  type: LoadBalancer
   selector:
     app: metallb-test
-  type: LoadBalancer
   ports:
-    - name: http
-      port: 80
-      targetPort: 80
-      protocol: TCP
+  - port: 80
+    targetPort: 80
