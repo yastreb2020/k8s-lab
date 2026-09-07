@@ -1,0 +1,97 @@
+# Фаза 6 (Service Mesh): canary 90/10 для demo-nginx (ns lab-demo).
+# Управляется ArgoCD (path gitops/demo).
+#
+# Механика: оба Deployment'а несут label app=demo-nginx → оба входят в
+# endpoints сервиса demo-nginx. DestinationRule описывает subset'ы по
+# demo.kubernetes.lab/revision (v1 уже в lab-demo.yml, v2 ниже).
+# VirtualService делает client-side split 90/10 — применяется ПРОКСИМ
+# mesh-клиента (внутри mesh). От edge (Traefik, не mesh) трафик раздаётся
+# по endpoints'ам как обычно (пропорционально подам) — это осознанная
+# особенность client-side routing, зафиксировано в отчёте.
+
+# v2: свой индекс, чтобы split было видно в теле ответа
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-v2-index
+  namespace: lab-demo
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head><title>demo v2</title></head>
+    <body><h1>demo v2 (canary)</h1></body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-nginx-v2
+  namespace: lab-demo
+  labels:
+    app: demo-nginx
+    demo.kubernetes.lab/revision: v2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-nginx
+      demo.kubernetes.lab/revision: v2
+  template:
+    metadata:
+      labels:
+        app: demo-nginx
+        demo.kubernetes.lab/revision: v2
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: index
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+      volumes:
+        - name: index
+          configMap:
+            name: demo-v2-index
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: demo-nginx
+  namespace: lab-demo
+spec:
+  host: demo-nginx
+  subsets:
+    - name: v1
+      labels:
+        demo.kubernetes.lab/revision: v1
+    - name: v2
+      labels:
+        demo.kubernetes.lab/revision: v2
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: demo-nginx
+  namespace: lab-demo
+spec:
+  hosts:
+    - demo-nginx
+  http:
+    - route:
+        - destination:
+            host: demo-nginx
+            subset: v1
+          weight: 90
+        - destination:
+            host: demo-nginx
+            subset: v2
+          weight: 10

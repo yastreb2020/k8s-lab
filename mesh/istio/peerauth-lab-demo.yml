@@ -1,0 +1,13 @@
+# Фаза 6 (Service Mesh / Istio): mTLS PERMISSIVE в ns lab-demo.
+# Причину: при STRICT (default с Istio 1.22) edge-прокси Traefik, который не
+# входит в mesh, не сможет подключиться к demo-nginx (нет workload-сертификата) —
+# Ingress lab-demo.kubernetes.lab ляжет. PERMISSIVE разрешает и plaintext,
+# и mTLS. STRICT проверяем отдельным шагом (раздел в отчёте).
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: lab-demo-permissive
+  namespace: lab-demo
+spec:
+  mtls:
+    mode: PERMISSIVE
