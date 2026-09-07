@@ -1,0 +1,27 @@
+# ArgoCD Application: демо-приложение lab-demo.
+# Bootstrap-аномалия: этот ресурс сам по определению вне ArgoCD (bootstrapping —
+# всегда вручную); в полном GitOps-цикле его бы делал ApplicationSet или
+# app-of-apps. Sync policy: автоматического синка НЕТ (ручной), selfHeal=true —
+# ручные отклонения от git ArgoCD откатывает.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-demo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/yastreb2020/k8s-lab
+    targetRevision: main
+    path: gitops/demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: lab-demo
+  syncPolicy:
+    # automated: самосинка при коммите нет (деплой вручную проверяем sync'ом);
+    # НО selfHeal=true — ручные отклонения от git ArgoCD откатывает автоматически
+    automated:
+      selfHeal: true
+      prune: false
+    syncOptions:
+      - CreateNamespace=true

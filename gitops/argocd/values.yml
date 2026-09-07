@@ -1,0 +1,39 @@
+# ArgoCD Helm Values for kubernetes.lab (Фаза 5, GitOps)
+#
+# Сетка: UI выводится через Traefik (Ingress) как ClusterIP — MetalLB-пул
+# ограничен (3 IP), отдельный LoadBalancer ArgoCD не выделяем.
+# TLS: cert-manager (Certificate от ClusterIssuer intermediate-ca-issuer,
+# нативный шаблон чарта server.certificate) → secret argocd-server-tls;
+# Traefik терминирует TLS, сервер ArgoCD работает в insecure-режиме (HTTP).
+
+global:
+  domain: argocd.kubernetes.lab
+
+configs:
+  params:
+    server.insecure: "true"
+
+server:
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: true
+    controller: generic
+    ingressClassName: traefik
+    hostname: argocd.kubernetes.lab
+    tls: true
+  certificate:
+    enabled: true
+    domain: argocd.kubernetes.lab
+    issuer:
+      group: cert-manager.io
+      kind: ClusterIssuer
+      name: intermediate-ca-issuer
+
+# Срезаны под ограниченные ресурсы (8 GB/воркер) и отсутствие SSO/почты:
+dex:
+  enabled: false
+notifications:
+  enabled: false
+applicationset:
+  enabled: false

@@ -1,0 +1,73 @@
+# Демо-приложение для Фазы 5 (GitOps): nginx + Service + Ingress.
+# Управляется ТОЛЬКО через ArgoCD (ns lab-demo).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-demo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-nginx
+  namespace: lab-demo
+  labels:
+    app: demo-nginx
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-nginx
+  template:
+    metadata:
+      labels:
+        app: demo-nginx
+        demo.kubernetes.lab/revision: "v1"
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-nginx
+  namespace: lab-demo
+spec:
+  selector:
+    app: demo-nginx
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: demo-nginx
+  namespace: lab-demo
+  annotations:
+    cert-manager.io/cluster-issuer: intermediate-ca-issuer
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: lab-demo.kubernetes.lab
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: demo-nginx
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - lab-demo.kubernetes.lab
+      secretName: lab-demo-tls
