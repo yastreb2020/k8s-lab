@@ -1,0 +1,27 @@
+# Traefik Helm Values for kubernetes.lab
+
+# Deployment configuration
+deployment:
+  enabled: true
+  kind: Deployment
+  replicas: 1
+
+# Service configuration (integrates with MetalLB)
+service:
+  enabled: true
+  type: LoadBalancer
+
+# Traefik entrypoints (web/80 and websecure/443)
+ports:
+  traefik:
+    expose:
+      default: true
+    # Note: we override the default port 8080 to 80/443 via additionalArguments or EntryPoints config if needed, 
+    # but for standard Ingress, Traefik uses its internal entrypoints.
+
+# TLS: сертификаты выпускает cert-manager (shim), в ACME-resolverе Traefik нет
+# необходимости (DNS *.kubernetes.lab ручной, challenge невозможен)
+
+# RBAC configuration
+rbac:
+  enabled: true

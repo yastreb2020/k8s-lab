@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: longhorn-ui
+  namespace: longhorn-system
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    # TLS-сертификат выпускает cert-manager (shim) в secret longhorn-ui-tls.
+    # ACME-certresolver Traefik не используется: DNS *.kubernetes.lab ручной (/etc/hosts),
+    # challenge-проверка ACME невозможна; CA стенда — наш intermediate из Vault.
+    cert-manager.io/cluster-issuer: intermediate-ca-issuer
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: longhorn.kubernetes.lab
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: longhorn-frontend
+            port:
+              number: 80
+  tls:
+  - hosts:
+    - longhorn.kubernetes.lab
+    secretName: longhorn-ui-tls
