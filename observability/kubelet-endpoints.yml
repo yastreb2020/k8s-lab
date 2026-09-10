@@ -1,0 +1,55 @@
+# Фаза 7.1 — kubelet Service + Endpoints (2026-09-08)
+#
+# KPS 90.0.0 создаёт ServiceMonitor kps-kube-prometheus-stack-kubelet, который
+# ожидает в kube-system сервис с labels {app.kubernetes.io/name: kubelet,
+# k8s-app: kubelet} и портом https-metrics. Чарт ЭТОТ сервис НЕ создаёт
+# (в версии 90.0.0 templates/exporters/kubelet/service.yaml отсутствует —
+# только servicemonitor.yaml) → без нашего манифеста kubelet-цель не родится.
+#
+# Endpoints статические (IP нод 10250) — штатный подход чарта (см. kube-etcd /
+# kube-proxy exporters). jobLabel=k8s-app → job="kubelet" (как в дашбордах).
+# Auth: Bearer-токен Prometheus-SА (чарт сам вешает authorization в SM).
+# Нюанс K8s 1.24+: token-audience у kubelet — проверено на цели после деплоя.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kps-kube-prometheus-stack-kubelet
+  namespace: kube-system
+  labels:
+    app: kube-prometheus-stack-kubelet
+    app.kubernetes.io/name: kubelet
+    k8s-app: kubelet
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/instance: kps
+    release: kps
+    heritage: Helm
+spec:
+  clusterIP: None
+  ports:
+    - name: https-metrics
+      port: 10250
+      protocol: TCP
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: kps-kube-prometheus-stack-kubelet
+  namespace: kube-system
+  labels:
+    app: kube-prometheus-stack-kubelet
+    k8s-app: kubelet
+    app.kubernetes.io/name: kubelet
+subsets:
+  - addresses:
+      - ip: 172.24.254.216
+    ports:
+      - name: https-metrics
+        port: 10250
+        protocol: TCP
+  - addresses:
+      - ip: 172.24.254.217
+    ports:
+      - name: https-metrics
+        port: 10250
+        protocol: TCP

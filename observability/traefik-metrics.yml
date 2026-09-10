@@ -1,0 +1,44 @@
+# Фаза 7.1 — Traefik metrics сервис (2026-09-08)
+#
+# Pod Traefik уже слушает :9100 (containerPort metrics=9100 объявлен чартом),
+# но штатный svc `traefik` (LoadBalancer) не включает 9100 — только entrypoints
+# 8080/80/443. Prometheus не видит порт → создаём отдельный ClusterIP-сервис.
+# Метрики проверены: traefik_service_requests и др. на :9100/metrics.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik-metrics
+  namespace: traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik-traefik
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: traefik-traefik
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: traefik
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - traefik
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/instance: traefik-traefik
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

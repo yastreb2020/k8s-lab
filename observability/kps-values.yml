@@ -1,0 +1,133 @@
+# kube-prometheus-stack 90.0.0 — kubernetes.lab (Фаза 7.1, 2026-09-08)
+#
+# Облегчённый профиль под 2 воркера (4 CPU / 8 GB, Calico IPIP):
+#  - отключены control-plane SM (apiserver/controller-manager/etcd/scheduler) —
+#    в KTHW control plane живёт процессами на CP-ноде (172.24.254.214), не подами,
+#    штатные SM чарта создают висячие Service+Endpoints -> гарантированные DOWN-target'ы.
+#  - kubelet: чарт 90.0.0 создаёт SM, но НЕ создаёт сервис (service.yaml в версии
+#    90.0.0 отсутствует) -> добавляем kubelet-endpoints.yml (Service+Endpoints в kube-system).
+#  - kube-apiserver: /metrics требует КЛИЕНТСКИЙ сертификат (проверено 2026-09-08:
+#    без cert TLS handshake alert 40; Bearer/SA-токен KTHW не принимает). Покрытие
+#    потребует положить client key kubeadmin.conf в secret в кластере — противоречит
+#    правилу «*.key не в git / секреты не коммитим». ВЫНЕСЕН из первоначального
+#    деплоя как опциональный follow-up.
+#  - отключён Alertmanager (в лабе алерты не нужны, экономия RAM).
+#  - Prometheus: retention 7d, 3Gi на longhorn-test (НЕ трогать дефолтный SC longhorn).
+#  - Grafana: persistence ВЫКЛ (дашборды через ConfigMap + sidecar, см. dashboards/).
+#    Иначе 2-я реплика Grafana+Prometheus съест Longhorn-disk (overprovisioning=100%,
+#    диск 8.4G/нода, впереди Loki/Vector в части 7.2).
+#  - node-exporter / kube-state-metrics / kubelet / core-dns / kube-prometheus rules — ВКЛ.
+#  - requests/limits заданы вручную: на воркере 8 GB и впереди Loki/Vector,
+#    дефолты чарта без requests оставляли бы планировщику свободу.
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn-test
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 3Gi
+    # ресурсы контейнера prometheus (top-level prometheus.resources в KPS не
+    # транслируется в Prometheus CR — ходят через prometheusSpec.containers)
+    containers:
+      - name: prometheus
+        resources:
+          requests: {cpu: 200m, memory: 768Mi}
+          limits: {cpu: "2", memory: 2Gi}
+  networkPolicy:
+    enabled: false
+
+# Control plane = процессы на CP-ноде (не поды). Штатные SM -> пустые Endpoints -> DOWN.
+kubeApiServer:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+# kube-proxy тоже CP-процесс (установлен скриптом install-kubeproxy-cp0.sh)
+kubeProxy:
+  enabled: false
+
+# Каскадно выключает соответствующие defaultRules (etcd/scheduler),
+# чтобы RecordingRules не сосались на отсутствующие сериализации.
+defaultRules:
+  rules:
+    etcd: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+
+alertmanager:
+  enabled: false
+
+thanosRuler:
+  enabled: false
+
+nodeExporter:
+  enabled: true
+  resources:
+    requests: {cpu: 30m, memory: 64Mi}
+    limits: {cpu: 100m, memory: 128Mi}
+
+kube-state-metrics:
+  enabled: true
+  resources:
+    requests: {cpu: 30m, memory: 128Mi}
+    limits: {cpu: 100m, memory: 256Mi}
+
+kubelet:
+  enabled: true
+
+coreDns:
+  enabled: true
+
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: false
+  resources:
+    requests: {cpu: 50m, memory: 200Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: intermediate-ca-issuer
+    hosts:
+      - grafana.kubernetes.lab
+    tls:
+      - hosts:
+          - grafana.kubernetes.lab
+        secretName: grafana-tls
+  sidecar:
+    # Грабли (2026-09-09): k8s-sidecar 2.11.2 (Python 3.15) не принимает cluster CA
+    # от KTHW: BasicConstraints CA:TRUE выдан НЕ critical -> VERIFY_X509_STRICT
+    # падает на "Basic Constraints of CA cert not marked critical". Чарт умеет
+    # выключить strict через env (client.py: DISABLE_X509_STRICT_VERIFICATION).
+    # Альтернатива (SKIP_TLS_VERIFY=true) не выбрана — теряем верификацию API.
+    # HEALTH_PORT: чарт 90.0.0 НЕ передаёт HEALTH_PORT в env MAIN sidecar-контейнеров
+    # (helper healthPort/8082/8084 рендерится только для init-варианта) -> оба
+    # контейнера слушают дефолтный 8080 в общем netns пода -> "Address in use"
+    # у второго. Ставим HEALTH_PORT прямо через env-pass-through:
+    # datasources=8082, dashboards=8084 (штатные дефолты k8s-sidecar).
+    datasources:
+      enabled: true
+      env:
+        DISABLE_X509_STRICT_VERIFICATION: "true"
+        HEALTH_PORT: "8082"
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+      env:
+        DISABLE_X509_STRICT_VERIFICATION: "true"
+        HEALTH_PORT: "8084"

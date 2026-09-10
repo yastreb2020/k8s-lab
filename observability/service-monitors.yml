@@ -1,0 +1,71 @@
+# Фаза 7.1 — ServiceMonitor'ы для компонентов лабы (2026-09-08)
+#
+# KPS 90.0.0 (ns observability) обнаруживает их через namespaceSelector ANY
+# (дефолт prometheus.operatorNamespaceSelector/ignoreNamespaceSelectors=false).
+#
+# 1. longhorn-backend:9500 — метрики Longhorn-менеджера (volume/engine/replica/backup).
+#    Endpoint проверен 2026-09-08: /metrics отдаёт longhorn_* сериализации.
+#    serviceMonitor.enabled в values Longhorn оставлен false (дублирование не нужно).
+# 2. istiod:15014 (http-monitoring) — control plane Istio 1.25.3.
+# 3. istio-sidecars:15090 (http-envoy-prometheus) — Envoy-админка в каждом sidecar'е
+#    ns lab-demo (68 istio_*-серий: requests_total/duration/bytes по workload'ам).
+#    Selector по под-лейблу security.istio.io/tlsMode=istio — его webhook ставит
+#    на ВСЕ инжектированные поды (не по имени пода).
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: longhorn
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - longhorn-system
+  selector:
+    matchLabels:
+      app: longhorn-manager
+  endpoints:
+    - port: manager
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istiod
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - istio-system
+  selector:
+    matchLabels:
+      app: istiod
+  endpoints:
+    - port: http-monitoring
+      path: /metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: istio-sidecars
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - lab-demo
+  selector:
+    matchLabels:
+      security.istio.io/tlsMode: istio
+  endpoints:
+    - port: http-envoy-prometheus
+      path: /stats/prometheus
+      interval: 30s
+      # Sidecar'ов мало (3 пода) — метрики тяжёлые, интервал 30s оптимален
