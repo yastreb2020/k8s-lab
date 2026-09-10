@@ -1,0 +1,42 @@
+# Фаза 7.2 — конфиг Vector Agent (source kubernetes_logs -> sink loki)
+# Отдельный CM (existingConfigMaps) — обход tpl() чарта: Helm НЕ
+# разворачивает {{ .kubernetes.* }} на время deploy (nil pointer);
+# Vector интерпретирует их на время событий.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-agent-config
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: vector
+data:
+  vector.yaml: |
+    data_dir: /vector-data-dir
+    api:
+      enabled: true
+      address: 0.0.0.0:8686
+
+    sources:
+      k8s_logs:
+        type: kubernetes_logs
+        auto_partial_merge: true
+
+    sinks:
+      loki:
+        type: loki
+        inputs: [k8s_logs]
+        # базовый URL: sink сам дописывает /loki/api/v1/push
+        # (грабля: полный путь в endpoint -> двойной путь -> 404)
+        endpoint: "http://loki-gateway.observability.svc.cluster.local"
+        encoding:
+          codec: json
+          timestamp_format: rfc3339
+        labels:
+          cluster: kubernetes.lab
+          namespace: "{{ .kubernetes.pod_namespace }}"
+          pod: "{{ .kubernetes.pod_name }}"
+          container: "{{ .kubernetes.container_name }}"
+        request:
+          concurrency: 2
+        healthcheck:
+          enabled: false

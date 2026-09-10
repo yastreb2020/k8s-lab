@@ -1,0 +1,29 @@
+# Фаза 7.2 — Vector Agent (DaemonSet) -> Loki
+# Чарт vector/vector 0.58.0, role Agent (DaemonSet).
+# Конфиг подаётся отдельным CM vector-agent-config (existingConfigMaps),
+# обход tpl() чарта — см. vector-agent-configmap.yml.
+role: Agent
+
+image:
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
+
+rbac:
+  create: true
+
+existingConfigMaps:
+  - vector-agent-config
+
+dataDir: /vector-data-dir
+
+# Сервисы не нужны: агент только шлёт логи в Loki (входящих вызовов нет)
+service:
+  enabled: false
+serviceHeadless:
+  enabled: false

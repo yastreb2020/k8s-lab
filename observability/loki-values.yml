@@ -1,0 +1,108 @@
+# Фаза 7.2 — Loki (single-binary), filesystem-хранилище на longhorn-test
+# Чарт grafana/loki 7.3.0. MinIO/объектное хранилище НЕ используем —
+# single-binary пишет чанки на PVC (longhorn-test), retention 7d.
+deploymentMode: SingleBinary
+
+loki:
+  # single-tenant lab: off multi-tenancy, no X-Scope-OrgID headers needed
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+    path_prefix: /var/loki
+  storage:
+    bucketNames:
+      chunks: loki-chunks
+      ruler: loki-ruler
+      admin: loki-admin
+  schemaConfig:
+    configs:
+      - from: "2026-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+  storage_config:
+    filesystem:
+      directory: /var/loki/chunks
+  limits_config:
+    retention_period: 168h
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+    working_directory: /var/loki/retention
+  ingester:
+    chunk_encoding: snappy
+  tracing:
+    enabled: true
+  querier:
+    max_concurrent: 4
+
+singleBinary:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+  extraEnv:
+    - name: GOMEMLIMIT
+      value: 800MiB
+  persistence:
+    enabled: true
+    storageClass: longhorn-test
+    size: 5Gi
+
+# Обнуляем компоненты других режимов развёртывания
+backend: { replicas: 0 }
+read: { replicas: 0 }
+write: { replicas: 0 }
+ingester: { replicas: 0 }
+querier: { replicas: 0 }
+queryFrontend: { replicas: 0 }
+queryScheduler: { replicas: 0 }
+distributor: { replicas: 0 }
+compactor: { replicas: 0 }
+indexGateway: { replicas: 0 }
+bloomCompactor: { replicas: 0 }
+bloomGateway: { replicas: 0 }
+ruler:
+  enabled: false
+  replicas: 0
+
+# MinIO не нужен (filesystem)
+minio:
+  enabled: false
+
+# Sidecar loki-sc-rules ломается на CA KTHW
+# (Basic Constraints not critical, Python 3.14 strict) — выключаем
+sidecar:
+  rules:
+    enabled: false
+
+# Отключаем лишнее для минимального стенда: canary, memcached-кэши, helm-test
+lokiCanary:
+  enabled: false
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+test:
+  enabled: false
+
+# gateway (nginx) — стандартная точка входа для агентов и дашбордов
+gateway:
+  enabled: true
+
+# Self-metrics Loki + дашборды чарта (loki-overview, chunks, ... в Grafana)
+monitoring:
+  dashboards:
+    enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    # Prometheus KPS выбирает SM по label release=kps — без него target не появляется
+    labels:
+      release: kps
