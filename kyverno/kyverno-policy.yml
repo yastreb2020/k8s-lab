@@ -1,0 +1,110 @@
+# Фаза 8.1 — Kyverno-политики kubernetes.lab (2026-09-10)
+#
+# Kyverno v1.19.1 (chart 3.9.1, ns kyverno, ghcr.io — reg.kyverno.io недоступен).
+# API: kyverno.io/v1 (legacy JMESPath) — в 1.19.1 работает; CEL-типы
+# policies.kyverno.io/* стоят в CRD, миграция не обязательна (deprecation-warning
+# при helm install — зафиксирован в отчёте).
+#
+# Области действия (намеренно уже default-deny-NetPol Фазы 8.2):
+# - enforce-политики (Validate) — только ns lab-demo: на infra-ns (calico-node,
+#   longhorn-engine, csi-node-driver-registrar — privileged по сути работы)
+#   запрет ломал бы кластер.
+# - default-label — Audit (background-scan, интервал 1h из features): не ломает
+#   существующие поды, флэжит существующие в PolicyReport (демо аудита).
+#
+# inject-ca-bundle (kyverno-ca-policy.yml) НЕ используется: CA-распространение
+# делает trust-manager Bundle cluster-ca-bundle (Фаза 3) — дублировать не нужно.
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: no-latest-image
+  annotations:
+    policies.kyverno.io/title: No Latest Image
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Запрет образов с тегом :latest или без тега — воспроизводимость и аудит
+      (Supply Chain). Действует в ns lab-demo (enforce).
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: check-latest-image
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - lab-demo
+    validate:
+      message: "Образ {{request.object.spec.containers[0].image}} использует :latest —
+        укажите пин-тег (например nginx:1.27-alpine)."
+      pattern:
+        spec:
+          containers:
+          - image: "!*:latest"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: no-privileged-pods
+  annotations:
+    policies.kyverno.io/title: No Privileged Pods
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Запрет privileged: true — контейнер получает все capabilities хоста.
+      PSS restricted. Действует в ns lab-demo (enforce).
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+  - name: check-privileged
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+          namespaces:
+          - lab-demo
+    validate:
+      message: "privileged: true запрещён политикой no-privileged-pods (PSS restricted)."
+      pattern:
+        spec:
+          =(securityContext):
+            =(privileged): "false"
+          containers:
+          - =(securityContext):
+              =(privileged): "false"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: default-app-label
+  annotations:
+    policies.kyverno.io/title: Default App Label
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Требовать метку app у новых подов (Best Practices, label-гигиена для
+      NetPol/дашбордов). Audit-режим: существующие поды флэгаются в PolicyReport
+      без блокировки (background-scan).
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: require-app-label
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    validate:
+      message: "Под без метки app — добавьте label app=<имя>."
+      pattern:
+        metadata:
+          labels:
+            app: "?*"

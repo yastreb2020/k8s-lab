@@ -11,6 +11,8 @@
 #    ns lab-demo (68 istio_*-серий: requests_total/duration/bytes по workload'ам).
 #    Selector по под-лейблу security.istio.io/tlsMode=istio — его webhook ставит
 #    на ВСЕ инжектированные поды (не по имени пода).
+# 4. kyverno-svc-metrics:8000 (metrics-port) — admission-controller Kyverno (Фаза 8.1).
+#    Чарт не ставит нужные label'ы (release=kps), SM создаётся здесь.
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
@@ -69,3 +71,22 @@ spec:
       path: /stats/prometheus
       interval: 30s
       # Sidecar'ов мало (3 пода) — метрики тяжёлые, интервал 30s оптимален
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kyverno
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - kyverno
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kyverno-admission-controller
+  endpoints:
+    - port: metrics-port
+      path: /metrics
+      interval: 30s

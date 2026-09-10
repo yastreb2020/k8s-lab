@@ -1,0 +1,112 @@
+# Kyverno Helm Values for kubernetes.lab (Фаза 8, Security)
+#
+# Chart kyverno/kyverno 3.9.1, app v1.19.1, ns kyverno.
+# Грабли:
+# - Дефолтный registry чарта reg.kyverno.io НЕДОСТУПЕН с кubernetes.lab —
+#   переключены на ghcr.io (global.image.registry), образы ghcr.io/kyverno/*.
+# - Old-stand values (kyverno-values.yml) используют docker-registry-nexus.neuro.tech —
+#   недоступен, НЕ использовать.
+# - readiness-checker пинется на v0.1.0 (есть в ghcr.io; tag ~ даёт latest).
+# - NetworkPolicy admission-controller: webhook :9443 открыт только для подсетей
+#   узлов (172.24.254.214-217) — API-сервер на cp0.
+# - ServiceMonitor создаётся отдельным манифестом (observability/service-monitors.yml
+#   стиль: ns observability, label release=kps — фильтр KPS Prometheus), т.к.
+#   чарт не ставит нужные label'ы.
+
+global:
+  image:
+    registry: ghcr.io
+
+crds:
+  install: true
+  migration:
+    enabled: true
+    image:
+      registry: ghcr.io
+      repository: kyverno/kyverno-cli
+      tag: "v1.19.1"
+
+test:
+  sleep: 20
+  image:
+    registry: ghcr.io
+    repository: kyverno/readiness-checker
+    tag: "v0.1.0"
+
+webhooksCleanup:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: kyverno/readiness-checker
+    tag: "v0.1.0"
+
+features:
+  backgroundScan:
+    enabled: true
+    backgroundScanWorkers: 2
+    backgroundScanInterval: 1h
+  configMapCaching:
+    enabled: true
+  logging:
+    format: json
+    verbosity: 2
+  registryClient:
+    allowInsecure: false
+    credentialHelpers: []
+
+admissionController:
+  replicas: ~
+  initContainer:
+    image:
+      registry: ghcr.io
+      repository: kyverno/kyvernopre
+      tag: "v1.19.1"
+  container:
+    image:
+      registry: ghcr.io
+      repository: kyverno/kyverno
+      tag: "v1.19.1"
+  networkPolicy:
+    # Webhook :9443 — только с подсетей узлов (API-сервер на cp0 172.24.254.214,
+    # воркеры .216/.217). Metrics :8000 — скрейп Prometheus: он ходит по POD-сети
+    # (172.16.0.0/16), не по подсетям узлов — без этого target down
+    # (context deadline exceeded, проверено 2026-09-10).
+    enabled: true
+    ingressFrom:
+      - ipBlock:
+          cidr: 172.24.254.0/24
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: observability
+  serviceMonitor:
+    enabled: false # отдельный SM в observability/service-monitors.yml (release=kps)
+
+backgroundController:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: kyverno/background-controller
+    tag: "v1.19.1"
+  replicas: ~
+  serviceMonitor:
+    enabled: false
+
+cleanupController:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: kyverno/cleanup-controller
+    tag: "v1.19.1"
+  replicas: ~
+  serviceMonitor:
+    enabled: false
+
+reportsController:
+  enabled: true
+  image:
+    registry: ghcr.io
+    repository: kyverno/reports-controller
+    tag: "v1.19.1"
+  replicas: ~
+  serviceMonitor:
+    enabled: false
