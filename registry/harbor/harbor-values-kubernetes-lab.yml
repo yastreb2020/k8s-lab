@@ -1,0 +1,106 @@
+# Harbor v2.15.2 (chart goharbor/harbor 1.19.2) — стенд kubernetes.lab
+# Фаза 9 Container Registry. Решение 2026-09-11 (kate): хранение на дисках Longhorn.
+#
+# Внесения относительно дефолтов чарта:
+# - expose.type=ingress (chart defaut = ingress) + Traefik-аннотации вместо nginx-ингресс:
+#   * ingress.kubernetes.io/ssl-redirect, proxy-body-size:0 — убраны (nginx-only)
+#   * cert-manager.io/cluster-issuer: intermediate-ca-issuer — TLS выпускает cert-manager
+#     (ingress-shim), как у longhorn-ui/argocd. expose.tls.enabled=true, certSource=auto,
+#     secretName <release>-ingress создаётся сам.
+# - externalURL: https://harbor.kubernetes.lab (DNS ручной, /etc/hosts на клиентах)
+# - persistence: ВСЕ PVC через SC longhorn-test (replicas=2 на 2-узловом кластере).
+#   Дефолтный SC longhorn (replicas=3) на 2 узлах не планирует — не использовать.
+#   registry 10Gi (место под образы), trivy disabled (PVC не создаётся).
+# - trivy: выключен (не в задании; экономия ~2GB RAM + 5Gi PVC).
+# - resources: у компонентов нет дефолтных requests/limits — заданы консервативные
+#   requests (всего ~0.5 CPU / ~1.2Gi) чтобы kubelet честно распределял поды
+#   по w0/w1 (ноды 4C/8GB, free ~4-5GB). Limits НЕ заданы (Java core захочет
+#   -Xmx; жёсткий limit memory → OOMKill).
+# - internalTLS: выключен (нет).
+# - enableMigrateHelmHook: true (дефолт) — миграция БД хуком.
+
+externalURL: https://harbor.kubernetes.lab
+
+# пароль admin — из секретов ns harbor (HARBOR_ADMIN_PASSWORD); в git/отчёт не идёт
+existingSecretAdminPassword: harbor-admin-pw
+
+expose:
+  type: ingress
+  tls:
+    enabled: true
+    certSource: auto
+  ingress:
+    hosts:
+      core: harbor.kubernetes.lab
+    annotations:
+      cert-manager.io/cluster-issuer: intermediate-ca-issuer
+
+persistence:
+  enabled: true
+  resourcePolicy: keep
+  # storageClass задаётся на каждом компоненте (чарт не поднимает его вверх).
+  persistentVolumeClaim:
+    registry:
+      storageClass: longhorn-test
+      size: 10Gi
+    jobservice:
+      jobLog:
+        storageClass: longhorn-test
+        size: 1Gi
+    database:
+      storageClass: longhorn-test
+      size: 1Gi
+    redis:
+      storageClass: longhorn-test
+      size: 1Gi
+  imageChartStorage:
+    type: filesystem
+    filesystem:
+      rootdirectory: /storage
+
+trivy:
+  enabled: false
+
+# ---- консервативные requests (суммарно ~0.5 CPU / ~1.2Gi) ----
+core:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+jobservice:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+portal:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+nginx:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+registry:
+  registry:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+  controller:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+database:
+  internal:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
