@@ -1,0 +1,36 @@
+# CoreDNS patch: external S3/MinIO hostname for Longhorn backup target.
+#
+# WHY: backup target host vm-minio.service.demo (demo-DC DNS, 172.24.254.120)
+# does NOT resolve from in-cluster CoreDNS (10.32.0.10) — upstream forward gets
+# no answer. Symptom on restore/backup: longhorn-manager replica engine fails
+#   "lookup vm-minio.service.demo on 10.32.0.10:53: no such host"
+# → volume becomes Faulted / RecurringJob "Found 0 volumes" with no backup.
+# The host itself resolves only via the .120 server. Fix: explicit hosts entry
+# in CoreDNS (vm-minio.service.demo → 172.24.254.123) with fallthrough.
+#
+# Apply (idempotent; replaces Corefile key of coredns ConfigMap, then restarts):
+#   kubectl create configmap coredns -n kube-system \
+#     --from-file=Corefile=$(pwd)/coredns-corefile-kubernetes-lab.yml -o yaml \
+#     --dry-run=client | kubectl apply -f -   # (file below is the Corefile body)
+#   kubectl -n kube-system rollout restart deployment/coredns
+#
+# NOTE: this is the Corefile BODY (what goes in .data.Corefile), not a ConfigMap
+# wrapper, so it can be piped directly to --from-file=Corefile=<this>.
+.:53 {
+    errors
+    health {
+       lameduck 5s
+   }
+    ready
+    kubernetes cluster.local in-cluster-dns.cluster.local kube-dns.cluster.local default.svc.cluster.local
+    prometheus :9153
+    hosts {
+        172.24.254.123 vm-minio.service.demo
+        fallthrough
+    }
+    forward . /etc/resolv.conf
+    cache 30
+    loop
+    reload
+    loadbalance
+}

@@ -1,8 +1,12 @@
 # Backup policy for Longhorn volumes (kubernetes.lab v2, applied 2026-09-03)
 # Daily backup at 02:00 UTC, keep 7 copies. Applied on volume by label:
 #   recurring-job-group.longhorn.io/backup-once-grp: "enabled"  (label на Volume CR)
-# NOTE: both labels required on volume for the job to pick it up:
-#   recurring-job.longhorn.io/backup-once-grp AND recurring-job-group.longhorn.io/backup-once-grp
+# NOTE: both labels required on volume for the job to pick it up —
+# the first is named after the JOB, the second after the GROUP:
+#   recurring-job.longhorn.io/backup-once=enabled
+#   recurring-job-group.longhorn.io/backup-once-grp=enabled
+# (2026-09-14: именно путаница job-name/group-name в этих лейблах делала job
+# «Found 0 volumes» — бэкапы реально не создавались. Зафиксировано в статусе.)
 # Backup target: backuptargets.longhorn.io default -> s3://k8s-lab@us-east-1/ (minio-backup-creds)
 apiVersion: longhorn.io/v1beta2
 kind: RecurringJob

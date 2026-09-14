@@ -1,0 +1,14 @@
+apiVersion: longhorn.io/v1beta2
+kind: Volume
+metadata:
+  name: dr-restore
+  namespace: longhorn-system
+spec:
+  numberOfReplicas: 2
+  size: "1073741824"
+  fromBackup: "s3://k8s-lab@us-east-1/backupstore?volume=pvc-bdcdbdc4-aff1-4cbb-8b4d-1da083b58ba0&backup=backup-26964bfc24544514"
+  dataEngine: v1
+  frontend: blockdev
+  backupTargetName: "default"
+  restoreVolumeRecurringJob: "ignored"
+  accessMode: "rwo"
