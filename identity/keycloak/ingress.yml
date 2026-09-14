@@ -1,0 +1,35 @@
+# Фаза 10 — Ingress Keycloak: keycloak.kubernetes.lab → Traefik LB 172.24.254.221.
+# Та же модель, что longhorn-ui (ingress/traefik/longhorn-ingress.yml):
+# websecure + router.tls, TLS выпускает cert-manager ingress-shim
+# (intermediate-ca-issuer), ACME не используется (DNS ручной /etc/hosts).
+# Issuer OIDC обязан совпадать с хостом до байта:
+#   https://keycloak.kubernetes.lab/realms/k8s-lab
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: identity
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    cert-manager.io/cluster-issuer: intermediate-ca-issuer
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: keycloak.kubernetes.lab
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: keycloak
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - keycloak.kubernetes.lab
+      secretName: keycloak-tls

@@ -1,0 +1,85 @@
+# Фаза 10 — NetworkPolicies: ns identity (Keycloak). Scope 8.2 (грабла плана):
+# ns identity включить в модель default-deny + точечные разрешения.
+# CNI: Calico (upstream K8s NetworkPolicy API).
+#
+# Модель (та же, что lab-demo/observability): default-deny ingress+egress
+# (политика 1) + точечные разрешения (политика 2).
+#
+# Разрешённые потоки identity:
+#   ingress:
+#     - ns traefik -> :8080              (edge: Ingress keycloak, backend-порт ПОДА)
+#     - same-namespace {}                (1 pod, east-west на будущее)
+#     - kubelet (ноды cp0/w0/w1) -> :8080 (readiness/liveness/startup-пробы,
+#       приходят с node-IP через SNAT kube-proxy — модель lab-demo 15021)
+#   egress:
+#     - kube-system :53 TCP/UDP          (DNS CoreDNS — must)
+#     - ВСЕ поды всех ns (namespaceSelector {}) — monitoring-девиация:
+#       Prometheus scrape'ит :8080/metrics из observability; Keycloak
+#       не обязан никому писать (single pod, dev-file DB). Ingress строгий.
+#
+# НЕ разрешено: ingress из других ns (кроме traefik + in-ns + kubelet),
+# egress наружу в node-сеть (кроме scrape).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-default-deny
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identity-allow
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # edge: Traefik (Ingress keycloak; порт ПОДА 8080, не svc-порт 80)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 8080
+    # east-west (1 pod; на будущее)
+    - from:
+        - podSelector: {}
+    # readiness/liveness/startup-пробы kubelet (с node-IP через SNAT)
+    - from:
+        - ipBlock:
+            cidr: 172.24.254.214/32
+        - ipBlock:
+            cidr: 172.24.254.216/32
+        - ipBlock:
+            cidr: 172.24.254.217/32
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    # DNS (CoreDNS) — must
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # monitoring-девиация: Prometheus scrape metrics из observability
+    - to:
+        - namespaceSelector: {}

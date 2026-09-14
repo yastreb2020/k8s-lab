@@ -1,0 +1,52 @@
+# Фаза 10 — RBAC-маппинг OIDC (least privilege, НЕ cluster-admin).
+#
+# Модель (lab-plan.md «Фаза 10», scope 3):
+# - ClusterRole lab-viewer: get/list/watch на pods/pods-log/svc/deploy в
+#   default, lab-demo, lab-db + get на nodes/namespaces (≈view, но без
+#   secrets/configmaps/events).
+# - Связки (ClusterRoleBinding, т.к. 3 ns):
+#   - Group k8s-admin  → lab-viewer  (Keycloak-роль k8s-admin, claim `groups`)
+#   - User kate        → lab-viewer  (preferred_username, запасной путь:
+#     user-claim работает без groups-claim)
+# - Пользователь demo (без ролей/групп) — НЕ связан: negative-тест
+#   (kubectl auth can-i get pods → no).
+#
+# Проверка: kubectl auth can-i <verb> <res> -n <ns> --as=system:oidc:<user> /
+# --as=system:oidc:k8s-admin (positive + negative).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: lab-viewer
+  labels:
+    phase.kubernetes.lab: identity
+rules:
+  - apiGroups: [""]
+    resources: [pods, services]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: ["apps"]
+    resources: [deployments]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [nodes, namespaces]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-admin-lab-viewer
+  labels:
+    phase.kubernetes.lab: identity
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: lab-viewer
+subjects:
+  - kind: Group
+    name: k8s-admin
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: kate
+    apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,22 @@
+# Фаза 10 — ServiceMonitor Keycloak (ns observability, label release=kps —
+# модель kyverno/loki: KPS Prometheus фильтрует SM по этому лейблу).
+# Keycloak 26: KC_METRICS_ENABLED=true → :8080/metrics (quarkus_* + jvm_*).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: keycloak
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  namespaceSelector:
+    matchNames:
+      - identity
+  selector:
+    matchLabels:
+      app: keycloak
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scheme: http

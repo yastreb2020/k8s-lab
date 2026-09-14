@@ -1,0 +1,156 @@
+# Фаза 10 — Identity: Keycloak 26 (OIDC-провайдер кластера), ns identity.
+#
+# Модель (решение kate 2026-09-14, lab-plan.md «Фаза 10»):
+# - образ quay.io/keycloak/keycloak:26, ПЛОСКИЙ Deployment (без operator'а),
+#   режим start-dev — лаба. Чарт bitnami НЕ используется (legacy-registry,
+#   решение плана).
+# - Хранение: PVC keycloak-data 2Gi, SC longhorn-test (replicas=2 на 2 узлах;
+#   дефолтный longhorn replicas=3 не планируется — не использовать).
+#   БД: KC_DB=dev-file (H2 file-based в /opt/keycloak/data = PVC). Отклонение
+#   от production-модели (Postgres) зафиксировано: лаба, данных мало, PVC даёт
+#   переживаемость рестартов + бэкап тома через RecurringJob.
+# - Лейблы бэкапа: на PVC НЕ ставятся (грабла 2026-09-14 — RecurringJob
+#   смотрит лейблы на Volume CR, а не на PVC; Longhorn их НЕ копирует с PVC).
+#   После Bound тома лейблы бьются на Volume CR:
+#     kubectl label volume -n longhorn-system <pvc-<uid-pvc> \
+#       recurring-job.longhorn.io/backup-once=enabled \
+#       recurring-job-group.longhorn.io/backup-once-grp=enabled --overwrite
+#   (модель harbor-томов; см. k8s-lab/csi/longhorn-backup-policy.yml).
+# - Ingress keycloak.kubernetes.lab → Traefik LB 172.24.254.221, TLS
+#   cert-manager ingress-shim (intermediate-ca-issuer) — та же модель, что
+#   longhorn-ui/argocd/harbor (ingress.yml отдельно).
+# - Ресурсы: requests 500m/1Gi (консервативно, как Harbor). Limits НЕ заданы:
+#   Quarkus/JVM сам поднимает heap (в реальности 2-4GiB); жёсткий limit
+#   memory → OOMKill. Влезает в свободные 7.2Gi w1 / 3Gi w0 (проверено 2026-09-14).
+# - hostname: --hostname=keycloak.kubernetes.lab — issuer должен совпадать с
+#   ingress-хостом до байта (грабла плана). strict=false — лаба, внутренние
+#   проверки с другими Host-заголовками не должны резаться.
+#
+# Secret keycloak-admin (пароль bootstrap-админа) НЕ в git:
+#   kubectl -n identity create secret generic keycloak-admin \
+#     --from-literal=password=<генерируется, в test-dir/keycloak-admin.local.txt>
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: identity
+  labels:
+    phase.kubernetes.lab: identity
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: identity
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: keycloak-data
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: identity
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-test
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: identity
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # 1 реплика + RO PVC: RollingUpdate вешается на old pod
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+        phase.kubernetes.lab: identity
+    spec:
+      serviceAccountName: keycloak
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26
+          command:
+            - /opt/keycloak/bin/kc.sh
+            - start-dev
+            - --hostname=keycloak.kubernetes.lab
+            - --hostname-strict=false
+            - --http-port=8080
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-admin
+                  key: password
+            - name: KC_DB
+              value: dev-file
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+            - name: KC_METRICS_ENABLED
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 8080
+          volumeMounts:
+            - name: data
+              mountPath: /opt/keycloak/data
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60   # первый старт Quarkus ~1-2 мин
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: keycloak-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: identity
+  labels:
+    app: keycloak
+    phase.kubernetes.lab: identity
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
