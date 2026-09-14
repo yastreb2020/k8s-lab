@@ -1,0 +1,163 @@
+# Фаза 8.2 — NetworkPolicies: ns lab-demo (демо-приложение lab-demo.kubernetes.lab).
+# CNI: Calico (upstream K8s NetworkPolicy API; задание просило Cilium — отклонение
+# задокументировано в lab-report-new.md).
+#
+# Модель: default-deny ingress+egress (политика 1) + точечные разрешения (политика 2).
+# Разрешения в политиках сущностны (не default-deny), т.к. upstream API не имеет
+# deny-правил — политика задаёт "что разрешено", всё остальное режет default-deny.
+#
+# Разрешённые потоки lab-demo (проверены в лабе 2026-09-11):
+#   ingress:
+#     - ns traefik -> :80            (edge: Ingress demo-nginx, Traefik под)
+#     - ns observability -> :15090   (Envoy /stats/prometheus, ServiceMonitor istio-sidecars)
+#     - ns observability -> :15020   (prometheus-scrape port, на будущее)
+#     - ns istio-system -> :15012,:15014 (istiod: ADS/xDS + SDSC mTLS; нужен для SYNCED
+#       после рестарта пода; :15014 — scrape istiod ServiceMonitor, идёт в istio-system)
+#     - kubelet (ноды) -> :15021     (readiness-проба sidecar: 15021/healthz/ready,
+#       приходит с node-IP через SNAT kube-proxy)
+#   egress:
+#     - kube-system :53 TCP/UDP      (DNS CoreDNS — must)
+#     - ns istio-system :15012,:15014 (xDS/SDS от sidecar'ов — must, иначе sidecar упадёт)
+#     - lab-demo.app=demo-nginx :80  (canary 90/10: v1 -> v2 через VirtualService;
+#       оба поды в одном сервисе, routing исполняется mesh-клиентом)
+#     - 172.24.244.10/32 :80 :5432 (WSL-хост kate / Windows-host NAT, source IP к кластеру (conntrack);
+#       тестовые соединения в лабу)
+#     - 172.24.254.0/24 :5432        (ноды: postgres lab-db в Лабе — шаг 8.2.2)
+#
+# НЕ разрешено (режется default-deny): весь остальной ingress/egress —
+# наружу из lab-demo, из других ns (кроме перечисленных), все чужие порты.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-demo-default-deny
+  namespace: lab-demo
+  labels:
+    app: demo-nginx
+    phase.kubernetes.lab: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-demo-allow
+  namespace: lab-demo
+  labels:
+    app: demo-nginx
+    phase.kubernetes.lab: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # edge: Traefik (Ingress demo-nginx)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 80
+    # monitoring: Prometheus (ServiceMonitor istio-sidecars: Envoy 15090)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 15090
+        - protocol: TCP
+          port: 15020
+    # istiod: ADS/xDS (15012) — must для sidecar SYNCED
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 15012
+    # readiness-пробы kubelet (sidecar 15021, с node-IP через SNAT)
+    - from:
+        - ipBlock:
+            cidr: 172.24.254.214/32
+        - ipBlock:
+            cidr: 172.24.254.216/32
+        - ipBlock:
+            cidr: 172.24.254.217/32
+      ports:
+        - protocol: TCP
+          port: 15021
+    # WSL-хост kate (тестовые соединения)
+    - from:
+        - ipBlock:
+            cidr: 172.24.244.10/32
+      ports:
+        - protocol: TCP
+          port: 80
+    # mesh-клиенты lab-demo (canary: v1 -> v2 через сервис/прямые pod-IP)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: demo-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    # DNS (CoreDNS) — must
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # istiod: xDS/SDS (15012) + metrics (15014) — must
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: 15012
+        - protocol: TCP
+          port: 15014
+    # canary: v1 -> v2 (VirtualService, client-side routing в mesh)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: demo-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+    # mesh-клиенты lab-demo (canary-ингресс: v1 -> v2, прямой pod-to-pod)
+    # NB: ingress-сторона тоже должна разрешать — egress одной политики
+    # не покрывает ingress другой (каждый pod выбирает политики по себе).
+    # postgres lab-db: egress из lab-demo в postgres lab-db (задание 8.2.2,
+    # подключение к :5432)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-db
+          podSelector:
+            matchLabels:
+              app: lab-db-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # WSL-хост kate (тесты; 80 + 5432 для lab-db)
+    - to:
+        - ipBlock:
+            cidr: 172.24.244.10/32
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 5432

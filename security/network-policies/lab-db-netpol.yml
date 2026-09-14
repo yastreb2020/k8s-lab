@@ -1,0 +1,78 @@
+# Фаза 8.2.2 — NetworkPolicies: ns lab-db (PostgreSQL, задание
+# "Проверка LoadBalancer и Network Policy").
+#
+# PostgreSQL: ingress только 5432 (от lab-demo, WSL-хоста kate, нод кластера),
+# egress только DNS. Всё остальное режется default-deny.
+# Проверки (2026-09-11): psql с WSL по MetalLB VIP — OK; egress из пода postgres
+# наружу — падает; чужие порты — закрыты.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-db-default-deny
+  namespace: lab-db
+  labels:
+    app: lab-db-postgres
+    phase.kubernetes.lab: security
+spec:
+  podSelector:
+    matchLabels:
+      app: lab-db-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lab-db-allow
+  namespace: lab-db
+  labels:
+    app: lab-db-postgres
+    phase.kubernetes.lab: security
+spec:
+  podSelector:
+    matchLabels:
+      app: lab-db-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # приложение lab-demo
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lab-demo
+      ports:
+        - protocol: TCP
+          port: 5432
+    # WSL-хост kate (тест psql по MetalLB VIP из задания)
+    - from:
+        - ipBlock:
+            cidr: 172.24.244.10/32
+      ports:
+        - protocol: TCP
+          port: 5432
+    # ноды кластера (psql/port-forward с нод; source = node-IP через SNAT)
+    - from:
+        - ipBlock:
+            cidr: 172.24.254.214/32
+        - ipBlock:
+            cidr: 172.24.254.216/32
+        - ipBlock:
+            cidr: 172.24.254.217/32
+      ports:
+        - protocol: TCP
+          port: 5432
+  egress:
+    # DNS (CoreDNS) — только разрешение имён
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

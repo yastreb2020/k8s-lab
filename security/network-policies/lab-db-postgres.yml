@@ -1,0 +1,158 @@
+# Фаза 8.2.2 — PostgreSQL в отдельном ns lab-db + Service LoadBalancer (MetalLB).
+# Задание: «Проверка LoadBalancer и Network Policy» — внешний доступ к postgres
+# только по MetalLB VIP:5432, egress пода ограничен DNS (lab-db-netpol.yml).
+#
+# Хранение: PVC 2Gi на SC longhorn-test (replicas=2) — дефолтный SC longhorn
+# (replicas=3) на 2-узловом кластере не используется (грабля Фазы 9).
+# Секрет lab-db-pg создаётся командой (пароль — из lab-db-pg.local.txt, gitignored),
+# в YAML секрет не зашит.
+#
+# Под: postgres:16.4-alpine. ENTRYPOINT официального образа требует UID 0
+# для init'а PGDATA (chown/chmod), сам postgres-процесс гоняется под uid 70
+# (postgres в alpine, gosu). securityContext:
+#   runAsUser 0 (entrypoint), capabilities drop ALL + add CHOWN/FOWNER/
+#   DAC_OVERRIDE (entrypoint chown'ит PGDATA/сокет, читает PGDATA mode 700
+#   uid 70 на каждом старте), allowPrivilegeEscalation false,
+#   seccompProfile RuntimeDefault, fsGroup 70. non-root-вариант (runAsUser 70)
+#   не работает: initdb "not empty: lost+found" на корне PVC + chown-запрет.
+# DataDir: /var/lib/postgresql/data/pgdata (субдиректория — mount-point
+# не используется напрямую, см. initdb-hint).
+# Kyverno enforce-политики действуют только в lab-demo — lab-db вне scope.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-db
+  labels:
+    phase.kubernetes.lab: security
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lab-db-postgres
+  namespace: lab-db
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lab-db-data
+  namespace: lab-db
+  labels:
+    app: lab-db-postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-test
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lab-db-postgres
+  namespace: lab-db
+  labels:
+    app: lab-db-postgres
+    phase.kubernetes.lab: security
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: lab-db-postgres
+  template:
+    metadata:
+      labels:
+        app: lab-db-postgres
+    spec:
+      serviceAccountName: lab-db-postgres
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16.4-alpine
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              # entrypoint (uid 0) init'ит PGDATA + сокет: chown/chmod требует
+              # CAP_CHOWN + CAP_FOWNER. DAC_OVERRIDE: entrypoint на каждом
+              # старте читает PGDATA mode 700 uid 70. SETUID+SETGID: gosu
+              # (root -> uid 70 postgres) — без них "failed switching to
+              # postgres: operation not permitted". drop ALL = базовый deny,
+              # add = минимум для entrypoint+gosu; служебный postgres-процесс
+              # гоняется под uid 70 (gosu).
+              add: ["CHOWN", "FOWNER", "DAC_OVERRIDE", "SETUID", "SETGID"]
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            # PGDATA = подкаталог под mount: initdb не терпит lost+found на корне
+            # Longhorn/XFS-тома (hint из initdb).
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lab-db-pg
+                  key: user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lab-db-pg
+                  key: password
+            - name: POSTGRES_DB
+              value: lab
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "lab", "-d", "lab"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "lab", "-d", "lab"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lab-db-data
+---
+# LoadBalancer: MetalLB выдаст VIP из lab-pool (172.24.254.221-223; .221 занят
+# Traefik'ом). Задание: внешний IP + подключение к 5432 с локального устройства.
+apiVersion: v1
+kind: Service
+metadata:
+  name: lab-db-postgres
+  namespace: lab-db
+  labels:
+    app: lab-db-postgres
+    phase.kubernetes.lab: security
+spec:
+  type: LoadBalancer
+  selector:
+    app: lab-db-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

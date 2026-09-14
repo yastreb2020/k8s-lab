@@ -1,0 +1,92 @@
+# Фаза 8.2.3 — default-deny + разрешения: ns observability (опциональный шаг 3).
+# Model: default-deny ingress+egress (политика 1) + точечные разрешения (политика 2).
+#
+# Observability = мониторинг/логи; boundary — ingress с edges (Traefik для Grafana)
+# и egress к targets. Внутренний east-west (scrape prometheus->loki, vector->loki)
+# разрешён широко (in-namespace ingress), т.к. все поды — доверенная infra.
+#
+# Разрешённые потоки (проверено 2026-09-11):
+#   ingress:
+#     - ns traefik -> :80            (edge: Ingress kps-grafana)
+#     - same-namespace {}            (east-west infra: scrape, loki gateway, vector->loki)
+#   egress:
+#     - kube-system :53              (DNS CoreDNS — must)
+#     - ВСЕ поды всех ns (namespaceSelector {}) — monitoring-девиация:
+#       Prometheus scrape'ит targets longhorn-system/traefik/kyverno/lab-demo
+#       (pod-IP 172.16.x.x). Мониторинг обязан видеть всё — разрешено широко,
+#       ingress остаётся строгим.
+#     - 172.24.254.0/24 :10250 :9100 (node targets: kubelet, node-exporter)
+#     - 172.24.254.214/32 :6443      (K8s API: prometheus-operator, kube-state-metrics)
+#
+# НЕ разрешено: ingress из других ns (кроме traefik + in-ns), egress наружу
+# в node-сеть (кроме scrape-портов) и в API (кроме 6443). Edge Grafana работает.
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-default-deny
+  namespace: observability
+  labels:
+    phase.kubernetes.lab: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: observability-allow
+  namespace: observability
+  labels:
+    phase.kubernetes.lab: security
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # edge: Traefik (Ingress kps-grafana). backend svc:80 -> targetPort "grafana"
+    # = 3000 (реальный порт пода) — в NetPol ports = dst-порт ПОДА, не svc-порт.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+      ports:
+        - protocol: TCP
+          port: 3000
+    # east-west infra (scrape, loki gateway, vector->loki, prometheus->targets)
+    - from:
+        - podSelector: {}
+  egress:
+    # DNS (CoreDNS) — must
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # monitoring-девиация: scrape targets во ВСЕХ ns (pod-IP)
+    - to:
+        - namespaceSelector: {}
+    # node targets: kubelet 10250, node-exporter 9100 (hostNetwork-поды)
+    - to:
+        - ipBlock:
+            cidr: 172.24.254.0/24
+      ports:
+        - protocol: TCP
+          port: 10250
+        - protocol: TCP
+          port: 9100
+    # K8s API server (prometheus-operator, kube-state-metrics, alertmanager)
+    - to:
+        - ipBlock:
+            cidr: 172.24.254.214/32
+      ports:
+        - protocol: TCP
+          port: 6443
