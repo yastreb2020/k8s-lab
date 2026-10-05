@@ -1,0 +1,12 @@
+network:
+  version: 2
+  ethernets:
+    enp1s0:
+      addresses:
+      - "172.24.254.214/24"
+      nameservers:
+        addresses:
+        - 172.24.254.120
+      routes:
+      - to: "default"
+        via: "172.24.254.1"

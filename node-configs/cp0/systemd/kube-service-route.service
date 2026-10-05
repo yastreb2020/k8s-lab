@@ -1,0 +1,12 @@
+[Unit]
+Description=Static route to Kubernetes service CIDR via w0
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ip route add 10.32.0.0/24 via 172.24.254.216 dev enp1s0
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

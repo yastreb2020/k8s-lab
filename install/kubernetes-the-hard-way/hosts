@@ -1,0 +1,5 @@
+
+# Kubernetes The Hard Way
+172.24.254.214 cp0.kubernetes.lab cp0
+172.24.254.216 w0.kubernetes.lab w0
+172.24.254.217 w1.kubernetes.lab w1

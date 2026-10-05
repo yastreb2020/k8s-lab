@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-services-endpoint
+  namespace: kube-system
+data:
+  KUBERNETES_SERVICE_HOST: "api-server.kubernetes.lab"
+  KUBERNETES_SERVICE_PORT: "6443"

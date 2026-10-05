@@ -1,0 +1,18 @@
+network:
+  version: 2
+  ethernets:
+    enp1s0:
+      addresses:
+      - "172.24.254.214/24"
+      nameservers:
+        addresses:
+        - 172.24.254.120
+      routes:
+      - to: "default"
+        via: "172.24.254.1"
+      # k8s service-CIDR 10.32.0.0/24 через w0: kube-proxy с cp0 снят 2026-09-11
+      # (Фаза 8). Инцидент 2026-10-05: маршрут терялся (networkd смывает
+      # ip route add при reapply; oneshot kube-service-route — только при буте),
+      # Kyverno webhook таймаутил 21 день. Источник правды — здесь.
+      - to: "10.32.0.0/24"
+        via: "172.24.254.216"
