@@ -67,10 +67,15 @@ admissionController:
       repository: kyverno/kyverno
       tag: "v1.19.1"
   networkPolicy:
-    # Webhook :9443 — только с подсетей узлов (API-сервер на cp0 172.24.254.214,
-    # воркеры .216/.217). Metrics :8000 — скрейп Prometheus: он ходит по POD-сети
-    # (172.16.0.0/16), не по подсетям узлов — без этого target down
-    # (context deadline exceeded, проверено 2026-09-10).
+    # Webhook :9443 — с подсетей узлов (API-сервер на cp0 172.24.254.214,
+    # воркеры .216/.217) + POD-сеть 172.16.0.0/16. Metrics :8000 — скрейп
+    # Prometheus: он ходит по POD-сети, не по подсетям узлов — без этого
+    # target down (context deadline exceeded, проверено 2026-09-10).
+    # Инцидент 2026-10-05: после снятия kube-proxy с cp0 (2026-09-11) запросы
+    # API-сервера до webhook приходят с SNAT'нутым pod-источником w0
+    # (172.16.x.x) — только узловый ipBlock их дропал, webhook таймаутил 21 день.
+    # ipBlock 172.16.0.0/16 добавлен в ingressFrom (2026-10-05, проверено:
+    # admission проходил после патча).
     enabled: true
     ingressFrom:
       - ipBlock:
@@ -78,6 +83,8 @@ admissionController:
       - namespaceSelector:
           matchLabels:
             kubernetes.io/metadata.name: observability
+      - ipBlock:
+          cidr: 172.16.0.0/16
   serviceMonitor:
     enabled: false # отдельный SM в observability/service-monitors.yml (release=kps)
 
