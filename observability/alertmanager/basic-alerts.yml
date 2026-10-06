@@ -1,0 +1,62 @@
+# basic-alerts.yml — базовый набор PrometheusRule для kubernetes.lab (Фаза 9.1)
+#
+# Метка release: kps обязательна — ruleSelector прометея = {matchLabels:{release:kps}}.
+# Подхватывается автоматически, без передеплоя стека. После kubectl apply
+# проверь: kubectl get prometheusrule -n observability -l release=kps.
+#
+# Это «базовые алерты» поверх штатных kube-prometheus-rules (KubePodCrashLooping,
+# KubeNodeNotReady, Watchdog и т.д.). Правила ловят общее здоровье хостов/пода.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: basic-alerts
+  namespace: observability
+  labels:
+    release: kps
+spec:
+  groups:
+    - name: k8s-basic-alerts.rules
+      rules:
+        # Хост почти исчерпал RAM (все ноды). Избегает срабатывания при
+        # нормальной загрузке — 90% утилизации node_memory 5 минут подряд.
+        - alert: HostHighMemoryUsage
+          expr: >
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes))
+            * 100 > 90
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Node {{ $labels.instance }} high memory usage"
+            description: >-
+              Memory usage on {{ $labels.instance }} exceeded 90% for the last
+              5 minutes (current: {{ $value | humanizePercentage }}). Check
+              running workloads / OOM pressure.
+
+        # Нагрузка CPU хоста выше 90% 10 минут — вероятно, не хватает ядер.
+        - alert: HostHighCpuLoad
+          expr: >
+            (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])))
+            * 100 > 90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.instance }} under high CPU load"
+            description: >-
+              CPU utilization on {{ $labels.instance }} exceeded 90% (non-idle)
+              for the last 10 minutes. Consider scaling workloads.
+
+        # StatefulSet/DaemonSet без всех реплик Ready -> деградация.
+        - alert: StatefulSetReplicasMismatch
+          expr: >
+            kube_statefulset_status_replicas_ready{namespace!=""}
+            != kube_statefulset_status_replicas{namespace!=""}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "StatefulSet {{ $labels.namespace }}/{{ $labels.statefulset }} not all replicas ready"
+            description: >-
+              Replicas ready ({{ $labels.namespace }}/{{ $labels.statefulset }}):
+              {{ $value }}. Expected all replicas Ready for {{ $labels.statefulset }}.

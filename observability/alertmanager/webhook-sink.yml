@@ -1,0 +1,87 @@
+# webhook-sink.yml — тестовый/нерабочий приёмник вебхук-алертов Alertmanager (Фаза 9.1)
+#
+# Назначение: контейнер, который просто ЛОГИРУЕТ POST-запросы от Alertmanager
+# (json алерта) в stdout пода. Позволяет проверить пайплайн «Prometheus rule ->
+# Alertmanager -> вебхук» без внешнего сервиса (Slack/webhook.site и т.п.).
+# Если алерт доставлен, в `kubectl logs deploy/alert-webhook -n observability`
+# появится строка `ALERT RECEIVED /alert` с телом.
+#
+# Приёмник НЕ для продакшена — это лаба. В бою замени receiver на реальный
+# webhook/slack/email в alertmanager.config (см. kps-values.yml).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alert-webhook-script
+  namespace: observability
+data:
+  sink.py: |
+    import http.server, sys
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            body = self.rfile.read(n).decode("utf-8", "replace")
+            sys.stdout.write("== ALERT RECEIVED %s ==\n%s\n-----\n" % (self.path, body))
+            sys.stdout.flush()
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok\n")
+
+        def log_message(self, *a):
+            pass  # не засорять stdout хелз-чеками
+
+    http.server.HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-webhook
+  namespace: observability
+  labels:
+    app: alert-webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-webhook
+  template:
+    metadata:
+      labels:
+        app: alert-webhook
+    spec:
+      containers:
+        - name: sink
+          image: python:3-alpine
+          command: ["python3", "-u", "/opt/sink.py"]
+          volumeMounts:
+            - name: script
+              mountPath: /opt/sink.py
+              subPath: sink.py
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          readinessProbe:
+            exec:
+              command: ["python3", "-c",
+                        "import urllib.request,socket;s=socket.socket();s.bind(('0.0.0.0',0))"]
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      volumes:
+        - name: script
+          configMap:
+            name: alert-webhook-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-webhook
+  namespace: observability
+  labels:
+    app: alert-webhook
+spec:
+  selector:
+    app: alert-webhook
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

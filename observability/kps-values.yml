@@ -63,7 +63,41 @@ defaultRules:
     kubeSchedulerRecording: false
 
 alertmanager:
-  enabled: false
+  enabled: true
+  resources:
+    requests: {cpu: 20m, memory: 128Mi}
+    limits: {cpu: 200m, memory: 256Mi}
+  # Конфиг Alertmanager (Фаза 9.1, 2026-10-06): базовый маршрут -> вебхук-приёмник
+  # alert-webhook (см. observability/alertmanager/webhook-sink.yml). Штатный Watchdog
+  # (дефолтное правило KPS) идёт на receiver 'null' — служит «пингом» пайплайна,
+  # не шумит. Остальные алерты группируются по alertname+namespace и уходят в вебхук.
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules:
+      - source_matchers: ['severity = critical']
+        target_matchers: ['severity =~ warning|info']
+        equal: ['namespace', 'alertname']
+      - source_matchers: ['severity = warning']
+        target_matchers: ['severity = info']
+        equal: ['namespace', 'alertname']
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: webhook-sink
+      routes:
+        - receiver: 'null'
+          matchers: ['alertname = "Watchdog"']
+    receivers:
+      - name: 'null'
+      - name: webhook-sink
+        webhook_configs:
+          - url: 'http://alert-webhook.observability.svc.cluster.local:8080/alert'
+            send_resolved: true
+    templates:
+      - '/etc/alertmanager/config/*.tmpl'
 
 thanosRuler:
   enabled: false
