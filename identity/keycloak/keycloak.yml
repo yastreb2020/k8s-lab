@@ -91,6 +91,19 @@ spec:
         phase.kubernetes.lab: identity
     spec:
       serviceAccountName: keycloak
+      # 2026-10-06 (Фаза 10 ремонт): после инцидента Longhorn том keycloak-data был
+      # пересоздан ПУСТЫМ (ext4 root:root, данные потеряны в инциденте; бэкапов/снапшотов
+      # нет). Keycloak 26 ходит от UID 1000 (USER keycloak) и не может писать в
+      # root-owned /opt/keycloak/data -> "Failed to save truststore ... Permission
+      # denied". fsGroup=1000 заставляет kubelet/Longhorn-CSI сделать том
+      # group-writable (OnRootMismatch не переписывает всё дерево на уже больших томах),
+      # runAsUser 1000 = штатный пользователь образа. С пустым томом keycloak
+      # стартует start-dev и заново создаёт admin + дефолтный realm.
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
       # w1: 7.2Gi free / 9% mem (2026-09-14) vs w0 63% mem + kubelet деградация
       # (TLS handshake timeout на :10250) во время первого Quarkus-build Keycloak
       # (>5 мин -> startup probe убил pod). Лаба 1 реплика — пилим на свободный узел.
@@ -122,25 +135,31 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            # Keycloak 26 (26.7.x): /health/* отдаются на MANAGEMENT-порту 9000,
+            # а НЕ на http-порту 8080 (на 8080 /health/ready -> 404). Без этого
+            # проба ниже валится и под никогда не становится Ready (ingress -> 503).
+            # Зафиксировано 2026-10-06 при ремонте.
+            - name: mgmt
+              containerPort: 9000
           volumeMounts:
             - name: data
               mountPath: /opt/keycloak/data
           startupProbe:
             httpGet:
               path: /health/ready
-              port: http
+              port: mgmt
             periodSeconds: 5
             failureThreshold: 120  # первый старт Quarkus-build >5 мин (проверено:
                                    # 60x5s не хватило на загруженном узле)
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: http
+              port: mgmt
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health/live
-              port: http
+              port: mgmt
             periodSeconds: 15
           resources:
             requests:

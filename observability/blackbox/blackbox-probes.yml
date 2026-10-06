@@ -25,7 +25,7 @@ spec:
       static:
         - https://argocd.kubernetes.lab
         - https://harbor.kubernetes.lab
-        - https://keycloak.kubernetes.lab
+        - https://keycloak.kubernetes.lab/realms/master/.well-known/openid-configuration
         - https://lab-demo.kubernetes.lab
         - https://longhorn.kubernetes.lab
         - https://grafana.kubernetes.lab
