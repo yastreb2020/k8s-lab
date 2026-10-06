@@ -118,6 +118,14 @@ spec:
             - --hostname=keycloak.kubernetes.lab
             - --hostname-strict=false
             - --http-port=8080
+            # 2026-10-06: за фронтом (Traefik ingress, TLS-терминация) без этого
+            # keycloak игнорирует X-Forwarded-Proto:https и строит АБСОЛЮТНЫЕ URL с
+            # http:// -> редирект /admin/ на http, а 3rd-party check iframe на login
+            # странице грузится по http из https-страницы (mixed content блокируется) ->
+            # браузер: "Timeout when waiting for 3rd party check iframe message".
+            # алиаса 'edge' в 26.7.3 НЕТ — принимает только forwarded|xforwarded. Traefik шлёт
+            # X-Forwarded-* -> используем xforwarded.
+            - --proxy-headers=xforwarded
           env:
             - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: admin
