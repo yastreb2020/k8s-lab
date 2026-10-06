@@ -60,3 +60,18 @@ spec:
             description: >-
               Replicas ready ({{ $labels.namespace }}/{{ $labels.statefulset }}):
               {{ $value }}. Expected all replicas Ready for {{ $labels.statefulset }}.
+
+    # Blackbox-пробы Ingress-эндпоинтов (см. blackbox/blackbox-probes.yml).
+    - name: k8s-probes.rules
+      rules:
+        - alert: ProbeDown
+          expr: probe_success{job="ingress-https"} == 0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Ingress endpoint {{ $labels.instance }} is down"
+            description: >-
+              Blackbox probe to {{ $labels.instance }} is failing
+              (probe_success = 0) for more than 2 minutes. HTTP status code:
+              {{ $value }}. Check the ingress / underlying pods.

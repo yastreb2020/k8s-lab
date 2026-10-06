@@ -1,0 +1,70 @@
+# blackbox-values.yml — prometheus-blackbox-exporter chart values (Фаза 9.2, 2026-10-06)
+#
+# Blackbox Exporter v0.28.0, release `blackbox`, ns observability.
+# Следит за 6 Ingress-эндпоинтами kubernetes.lab (HTTPS через Traefik LB 172.24.254.221).
+#
+# Ключевые решения:
+#  1. KPS 90.0.0 НЕ включает blackbox как зависимость (его в chart нет вообще —
+#     только crds/ksm/node-exporter/grafana/windows-exporter). Ставим отдельным
+#     чартом prometheus-community/prometheus-blackbox-exporter.
+#  2. serviceMonitor.selfMonitor = да (чернбокс самим/собственные метрики /metrics),
+#     с label release:kps, чтобы kps-Prometheus подхватил (serviceMonitorSelector
+#     у прометея = {matchLabels:{release:kps}}). Нативные `targets` чарта НЕ юзаем —
+#     эндпоинты мониторим через Probe CR (см. blackbox-probes.yml), это родной
+#     способ промetheus-operator и согласовано с basic-alerts/PrometheusRule.
+#  3. Модуль http_2xx_https: эндпоинты на HTTPS, а в дефолтном конфиге чарта только
+#     http_2xx (http). Добавляем схемную https-версию.
+#  4. Модуль использует tls_config.insecure_skip_verify: true — эндпоинты за
+#     внутренним CA (intermediate-ca-issuer), который под в pod не смонтирован.
+#     Это компромисс лабы: проверяем доступность/HTTP-статус, не цепочку доверия.
+#     Для полной проверки TLS надо примонтировать CA в blackbox и указать ca_file.
+#  5. hostAliases: имя ingress'ов резолвится ТОЛЬКО в /etc/hosts WSL-хоста, в
+#     кластерном DNS их нет. Прокидываем 172.24.254.221 (Traefik LB) в /etc/hosts
+#     пода blackbox, чтобы Probes могли ходить по настоящим hostname (= SNI).
+#  6. resources: минимальные (лаба, 2 воркера по 8 GB).
+
+config:
+  modules:
+    http_2xx:
+      prober: http
+      timeout: 5s
+      http:
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        follow_redirects: true
+        preferred_ip_protocol: "ip4"
+    # HTTPS-проверка. ВАЖНО: у blackbox НЕТ поля `scheme`/`http_scheme` —
+    # протокол берётся из target-URL Probe'а (поэтому в blackbox-probes.yml
+    # таргеты записаны как https://...). TLS-политика задаётся через tls_config.
+    https_2xx:
+      prober: http
+      timeout: 10s
+      http:
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        follow_redirects: true
+        preferred_ip_protocol: "ip4"
+        tls_config:
+          # лаб. internal CA (intermediate-ca-issuer) не смонтирован в под —
+          # проверяем доступность/статус, цепочку доверия не верим.
+          insecure_skip_verify: true
+
+# Разрешение ingress-hostname -> Traefik LB (см. п.5 выше)
+hostAliases:
+  - ip: 172.24.254.221
+    hostNames:  # ключ чарта — hostNames (с большой N), не hostnames (см. _helpers.tpl)
+      - argocd.kubernetes.lab
+      - harbor.kubernetes.lab
+      - keycloak.kubernetes.lab
+      - lab-demo.kubernetes.lab
+      - longhorn.kubernetes.lab
+      - grafana.kubernetes.lab
+
+resources:
+  requests: {cpu: 10m, memory: 32Mi}
+  limits: {cpu: 200m, memory: 128Mi}
+
+# Селф-мониторинг самого экспортера (метрики /metrics на 9115).
+serviceMonitor:
+  selfMonitor:
+    enabled: true
+    labels:
+      release: kps
