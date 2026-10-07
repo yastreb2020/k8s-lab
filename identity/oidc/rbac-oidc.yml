@@ -1,0 +1,105 @@
+# Фаза 12 — Kubernetes-аутентификация через Keycloak OIDC (lab-модель, 2026-10-07).
+#
+# Как это работает:
+#   1. kube-apiserver на cp0 запущен с OIDC-флагами (см. oidc-flags.md в этой папке):
+#        --oidc-issuer-url=https://keycloak.kubernetes.lab/realms/kubernetes.lab
+#        --oidc-client-id=kubectl
+#        --oidc-username-claim=preferred_username
+#        --oidc-groups-claim=groups
+#        --oidc-ca-file=/var/lib/kubernetes/keycloak-ca.crt
+#      Любой JWT из этого issuer+client принимается; username = claim
+#      preferred_username (полный username = issuer#preferred_username, т.к.
+#      не задан --oidc-username-prefix), группы = значения claim groups.
+#      ВАЖНО: API-сервер к значениям групп НИКАКОЙ префикс НЕ добавляет —
+#      группа "developers" в claim приходит в RBAC как есть (не
+#      system:groups:developers). Проверено SelfSubjectReview:
+#      groups=[developers system:authenticated].
+#   2. Keycloak realm `kubernetes.lab`, public-клиент `kubectl` (PKCE),
+#      protocol-mapper'ы: preferred_username, groups (claim "groups",
+#      full.path=false → "developers"), email, audience-mapper (aud "kubectl"
+#      — обязателен, т.к. API-сервер сверяет aud с --oidc-client-id).
+#      Провайжен скриптом /tmp/kc_provision.py (2026-10-07); пароли пользователей
+#      НЕ в git — генерируются при провижне (см. oidc-flags.md).
+#   3. kubectl-конфиг kubeoidc.conf (test-dir, gitignored):
+#      users[0].name=kate → exec-плагин kubelogin (int128/kubelogin):
+#      get-token --oidc-issuer-url ... --oidc-client-id=kubectl
+#      --listen-address=0.0.0.0:8000 (WSL: браузер Windows добирается через
+#      localhost-forwarding). Токен кэшируется в ~/.kube/cache/oidc-login,
+#      refresh_token (access_type=offline) пролонгирует его автоматически.
+#      При первом логине — страница Keycloak (логин kate).
+#   4. RBAC: группа developers получает view-права (ниже).
+#
+# RBAC-модель (лабы, минимальная):
+#   - ClusterRole lab-oidc-view: read-only на основные ресурсы
+#     (pods, services, deployments, ...). secrets НЕ выданы — осознанно.
+#   - ClusterRoleBinding lab-oidc-view: subject group developers (НЕ
+#     system:groups:developers — префикса нет, см. п.1).
+#
+# НЕ используется: kubernetes-oidc-provider (sidecar-мост) — не нужен,
+# API-сервер сам валидирует JWT Keycloak.
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: lab-oidc-view
+  labels:
+    app.kubernetes.io/part-of: kubernetes-lab
+    app.kubernetes.io/phase: "12-oidc"
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - namespaces
+      - pods
+      - pods/log
+      - pods/status
+      - services
+      - configmaps
+      - persistentvolumes
+      - persistentvolumeclaims
+      - replicationcontrollers
+      - endpoints
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources:
+      - gatewayclasses
+      - gateways
+      - httproutes
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: lab-oidc-view
+  labels:
+    app.kubernetes.io/part-of: kubernetes-lab
+    app.kubernetes.io/phase: "12-oidc"
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: developers
+roleRef:
+  kind: ClusterRole
+  name: lab-oidc-view
+  apiGroup: rbac.authorization.k8s.io
