@@ -1,0 +1,102 @@
+# Фаза 11 — Gateway API: тестовое приложение + TLS
+# ns lab-gw: Deployment+Service gw-demo (nginx), Certificate (cert-manager)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lab-gw
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gw-demo-index
+  namespace: lab-gw
+data:
+  index.html: |
+    <!doctype html>
+    <html>
+    <head><title>gw-demo</title></head>
+    <body>
+      <h1>Gateway API lab: gw-demo</h1>
+      <p>Served через Gateway API (Traefik), ns lab-gw.</p>
+      <p>host: gw-demo.kubernetes.lab</p>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gw-demo
+  namespace: lab-gw
+  labels:
+    app: gw-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gw-demo
+  template:
+    metadata:
+      labels:
+        app: gw-demo
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: index
+          # subPath: подменить только index.html (без него весь html-каталог
+          # nginx перекрывался ConfigMap'ом -> дефолтная страница)
+          mountPath: /usr/share/nginx/html/index.html
+          subPath: index.html
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 2
+          periodSeconds: 5
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+      volumes:
+      - name: index
+        configMap:
+          name: gw-demo-index
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gw-demo
+  namespace: lab-gw
+  labels:
+    app: gw-demo
+spec:
+  selector:
+    app: gw-demo
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gw-demo-tls
+  namespace: lab-gw
+spec:
+  secretName: gw-demo-tls
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: intermediate-ca-issuer
+  dnsNames:
+  - gw-demo.kubernetes.lab
+  usages:
+  - digital signature
+  - key encipherment

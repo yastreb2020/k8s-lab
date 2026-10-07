@@ -1,0 +1,54 @@
+# Фаза 11 — Gateway API: GatewayClass + Gateway + HTTPRoute
+# Edge-контроллер: Traefik v3.7.13 (controllerName traefik.io/gateway-controller).
+# Listener = entrypoint websecure (container-порт 8443; наружу его выводит
+# Service 443->8443 на LB 172.24.254.221). Порт в listener должен совпадать с
+# entrypoint'ом Traefik, НЕ с наружным портом Service.
+# Сертификат cert-manager (gw-demo-tls) — тот же issuer, что у Ingress'ов стенда.
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: lab-traefik
+spec:
+  controllerName: traefik.io/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw-demo
+  namespace: lab-gw
+spec:
+  gatewayClassName: lab-traefik
+  listeners:
+  - name: https
+    protocol: HTTPS
+    port: 8443
+    hostname: gw-demo.kubernetes.lab
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: gw-demo-tls
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: gw-demo
+  namespace: lab-gw
+spec:
+  parentRefs:
+  - name: gw-demo
+    kind: Gateway
+    namespace: lab-gw
+  hostnames:
+  - gw-demo.kubernetes.lab
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: gw-demo
+      kind: Service
+      namespace: lab-gw
+      port: 80
+      weight: 1

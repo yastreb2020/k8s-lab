@@ -25,3 +25,11 @@ ports:
 # RBAC configuration
 rbac:
   enabled: true
+
+# Gateway API (Фаза 11): включаем provider Traefik.
+# CRD ставятся отдельно (gateway-api-crds-v1.2.0.yaml).
+# Статус Gateway берётся из LoadBalancer-сервиса traefik/traefik (MetalLB 172.24.254.221).
+# gateway.enabled в чарте НЕ включаем: Gateway-объекты ведёт репо (gateway.yml).
+providers:
+  kubernetesGateway:
+    enabled: true
