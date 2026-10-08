@@ -48,8 +48,10 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # edge: Traefik (Ingress kps-grafana). backend svc:80 -> targetPort "grafana"
-    # = 3000 (реальный порт пода) — в NetPol ports = dst-порт ПОДА, не svc-порт.
+    # edge: Traefik (Ingress kps-grafana / kps-prometheus / kps-alertmanager).
+    # В NetPol ports = dst-порт ПОДА, не svc-порт:
+    #   grafana (kps-grafana :80 -> 3000), prometheus (kps-*-prometheus :9090 ->
+    #   9090), alertmanager (kps-*-alertmanager :9093 -> 9093).
     - from:
         - namespaceSelector:
             matchLabels:
@@ -57,6 +59,10 @@ spec:
       ports:
         - protocol: TCP
           port: 3000
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9093
     # east-west infra (scrape, loki gateway, vector->loki, prometheus->targets)
     - from:
         - podSelector: {}
