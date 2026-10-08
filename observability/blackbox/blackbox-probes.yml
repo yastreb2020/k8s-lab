@@ -1,6 +1,6 @@
 # blackbox-probes.yml — Probe CR для мониторинга Ingress-эндпоинтов (Фаза 9.2)
 #
-# Следит за доступностью 6 HTTPS-эндпоинтов kubernetes.lab через blackbox-exporter.
+# Следит за доступностью 8 HTTPS-эндпоинтов kubernetes.lab через blackbox-exporter.
 # Создаёт в Prometheus job `ingress-https` с 6 таргетами (по одному на hostname);
 # метрики: probe_success{instance="<hostname>"}, probe_http_status_code,
 # probe_duration_seconds. Правила для алертов — см. blackbox-rules (опционально).
@@ -29,3 +29,5 @@ spec:
         - https://lab-demo.kubernetes.lab
         - https://longhorn.kubernetes.lab
         - https://grafana.kubernetes.lab
+        - https://prometheus.kubernetes.lab
+        - https://alertmanager.kubernetes.lab

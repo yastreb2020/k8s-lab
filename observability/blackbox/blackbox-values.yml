@@ -1,7 +1,7 @@
 # blackbox-values.yml — prometheus-blackbox-exporter chart values (Фаза 9.2, 2026-10-06)
 #
 # Blackbox Exporter v0.28.0, release `blackbox`, ns observability.
-# Следит за 6 Ingress-эндпоинтами kubernetes.lab (HTTPS через Traefik LB 172.24.254.221).
+# Следит за 8 Ingress-эндпоинтами kubernetes.lab (HTTPS через Traefik LB 172.24.254.221).
 #
 # Ключевые решения:
 #  1. KPS 90.0.0 НЕ включает blackbox как зависимость (его в chart нет вообще —
@@ -57,6 +57,8 @@ hostAliases:
       - lab-demo.kubernetes.lab
       - longhorn.kubernetes.lab
       - grafana.kubernetes.lab
+      - prometheus.kubernetes.lab
+      - alertmanager.kubernetes.lab
 
 resources:
   requests: {cpu: 10m, memory: 32Mi}
